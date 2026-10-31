@@ -1,5 +1,9 @@
 """index.html 에 Supabase URL·anon key 를 넣어 docs/index.html 로 만들고 커밋·푸시(GitHub Pages: main /docs)."""
 import os, subprocess, sys
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 sys.path.insert(0, "D:/kiwoom-trade")
 from storage.secrets import get_secret
 from sync.supabase_client import URL_KEY, KEY_KEY

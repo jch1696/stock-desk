@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Desk</title>
+<style>
+  :root{ --bg:#0f1116; --card:#161a23; --line:#262b36; --fg:#e6e8ee; --mute:#9aa0a6; --acc:#5b8def; --up:#1DB954; --dn:#e24b4a; }
+  *{ box-sizing:border-box }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system,"Segoe UI","Malgun Gothic",sans-serif; padding:0 16px 40px; }
+  h1{ font-size:18px; margin:14px 0 8px } h2{ font-size:15px; margin:18px 0 8px; color:#cfd3da }
+  .top{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px }
+  button{ background:#242a37; color:var(--fg); border:1px solid #333b4a; border-radius:7px; padding:6px 10px; cursor:pointer }
+  button.primary{ background:var(--acc); border-color:var(--acc); color:#fff } button.danger{ background:#5a2323; border-color:#7a2e2e }
+  button.ghost{ background:transparent }
+  input,select,textarea{ background:#0f1218; color:var(--fg); border:1px solid #333b4a; border-radius:7px; padding:6px 8px }
+  table{ border-collapse:collapse; width:100%; font-size:13px } th,td{ padding:6px 8px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap }
+  th:first-child,td:first-child,th.l,td.l{ text-align:left } th{ color:var(--mute); font-weight:600; cursor:pointer; position:sticky; top:0; background:var(--card) }
+  tr.row:hover{ background:#1c2130; cursor:pointer } .up{ color:var(--up) } .dn{ color:var(--dn) } .mute{ color:var(--mute) }
+  .tabs{ display:flex; gap:4px; border-bottom:1px solid var(--line); margin:10px 0 } .tabs button{ border:none; border-bottom:2px solid transparent; border-radius:0; background:transparent; padding:8px 12px }
+  .tabs button.on{ border-bottom-color:var(--acc); color:#fff }
+  .hidden{ display:none } .wrap{ overflow:auto; max-height:70vh }
+  .pill{ display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; background:#242a37; margin-left:4px }
+  .good{ background:#163d2a; color:#7ee2a8 } .bad{ background:#4a1f1f; color:#f0a0a0 } .warn{ background:#4a3a1a; color:#f0d090 }
+  .kpi{ display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px } .kpi .k{ background:#0f1218; border-radius:8px; padding:8px } .kpi .k b{ display:block; font-size:16px } .kpi .k span{ color:var(--mute); font-size:11px }
+  textarea{ width:100%; min-height:90px } .srow{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0 }
+  svg text{ fill:var(--mute); font-size:10px }
+  #login{ max-width:420px; margin:40px auto }
+</style>
+</head>
+<body>
+<div id="login" class="card">
+  <h1>Stock Desk — 로그인</h1>
+  <div class="srow"><input id="email" placeholder="이메일" style="flex:1"><input id="pw" type="password" placeholder="비밀번호" style="flex:1"></div>
+  <div class="srow"><button class="primary" onclick="login()">로그인</button><span id="login_msg" class="mute"></span></div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="top">
+    <h1>📊 Stock Desk</h1>
+    <span id="who" class="mute"></span>
+    <button class="ghost" onclick="refresh()">새로고침</button>
+    <a class="mute" href="https://jch1696.github.io/kiwoom-monitor/" target="_blank">↗ 매매 모니터</a>
+    <span id="asof" class="mute"></span>
+    <button class="ghost" onclick="logout()" style="margin-left:auto">로그아웃</button>
+  </div>
+  <div class="tabs">
+    <button class="on" data-tab="port" onclick="showTab('port')">보유</button>
+    <button data-tab="watch" onclick="showTab('watch')">관심</button>
+    <button data-tab="all" onclick="showTab('all')">비교표</button>
+    <button data-tab="detail" onclick="showTab('detail')">종목</button>
+  </div>
+
+  <div class="pane" data-pane="port">
+    <div class="card">
+      <div class="srow">
+        <b>종목 추가</b> <input id="p_sym" placeholder="티커 (예: NVDA)" style="width:110px;text-transform:uppercase">
+        <input id="p_acct" placeholder="계좌/증권사" style="width:120px"><input id="p_qty" placeholder="수량" style="width:80px"><input id="p_avg" placeholder="평단($)" style="width:90px">
+        <button class="primary" onclick="addPos()">추가</button>
+        <button class="ghost" onclick="togglePaste()">엑셀 붙여넣기 ▾</button>
+      </div>
+      <div id="paste_box" class="hidden"><textarea id="paste" placeholder="티커 [탭] 수량 [탭] 평단 [탭] 계좌  — 한 줄에 하나 (계좌 생략 가능)"></textarea><div class="srow"><button onclick="pastePos()">가져오기</button></div></div>
+    </div>
+    <div id="port_sum" class="kpi" style="margin:10px 0"></div>
+    <div class="card wrap"><table id="port_tbl"></table></div>
+  </div>
+
+  <div class="pane hidden" data-pane="watch">
+    <div class="card"><div class="srow"><b>관심 추가</b> <input id="w_sym" placeholder="티커" style="width:110px;text-transform:uppercase"><input id="w_tags" placeholder="태그 (예: 반도체, 배당)" style="width:200px"><button class="primary" onclick="addWatch()">추가</button></div></div>
+    <div class="card wrap" style="margin-top:10px"><table id="watch_tbl"></table></div>
+  </div>
+
+  <div class="pane hidden" data-pane="all">
+    <div class="mute" style="margin:4px 0 8px">보유+관심 전체. 열 제목을 누르면 정렬. 색: 초록=좋음, 빨강=주의 (PER&lt;15, PEG&lt;1, ROE&gt;15%, 주식수 감소, 내부자 순매수)</div>
+    <div class="card wrap"><table id="all_tbl"></table></div>
+  </div>
+
+  <div class="pane hidden" data-pane="detail"><div id="detail"></div></div>
+</div>
+
+<script>
+const DEFAULT_URL = 'https://pmirluxobczxcgwbogxa.supabase.co';
+const DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtaXJsdXhvYmN6eGNnd2JvZ3hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NjUwNjMsImV4cCI6MjA5NjM0MTA2M30.UF7RkhCVDwD_8oasfWhRguWda5vc7NesUSw3Bq2Z9V0';
+let URL_ = DEFAULT_URL, KEY_ = DEFAULT_KEY, TOKEN_ = '', USER_ = null;
+let _pos = [], _watch = [], _fund = {}, _ins = {}, _px = {}, _tab = 'port', _sel = '', _sort = {all:['symbol',1], port:['symbol',1], watch:['symbol',1]};
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (v, d=2) => (v==null||isNaN(v)) ? '-' : Number(v).toLocaleString('en-US',{minimumFractionDigits:d, maximumFractionDigits:d});
+const pct = (v, d=1) => (v==null||isNaN(v)) ? '-' : (v>=0?'+':'')+(v*100).toFixed(d)+'%';
+const money = v => (v==null||isNaN(v)) ? '-' : (Math.abs(v)>=1e9 ? '$'+(v/1e9).toFixed(2)+'B' : Math.abs(v)>=1e6 ? '$'+(v/1e6).toFixed(1)+'M' : '$'+fmt(v,0));
+const lset = (k,v)=>{ try{ localStorage.setItem(k,v);}catch(e){} }, lget=(k,d)=>{ try{ return localStorage.getItem(k)??d; }catch(e){ return d; } };
+const H = extra => Object.assign({ apikey:KEY_, Authorization:'Bearer '+TOKEN_, 'Content-Type':'application/json' }, extra||{});
+
+async function login(){
+  const email=$('email').value.trim(), pw=$('pw').value;
+  $('login_msg').textContent='로그인 중…';
+  try{
+    const r = await fetch(`${URL_}/auth/v1/token?grant_type=password`, { method:'POST', headers:{ apikey:KEY_, 'Content-Type':'application/json' }, body: JSON.stringify({email, password:pw}) });
+    const d = await r.json();
+    if(!r.ok || !d.access_token){ $('login_msg').textContent='실패: '+(d.error_description||d.msg||r.status); return; }
+    TOKEN_=d.access_token; USER_=d.user; lset('desk_email', email); lset('desk_refresh', d.refresh_token||'');
+    $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('who').textContent=email;
+    refresh();
+  }catch(e){ $('login_msg').textContent='오류: '+e; }
+}
+async function tryRefreshToken(){
+  const rt=lget('desk_refresh',''); if(!rt) return false;
+  try{
+    const r=await fetch(`${URL_}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:KEY_,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:rt})});
+    const d=await r.json(); if(!r.ok||!d.access_token) return false;
+    TOKEN_=d.access_token; USER_=d.user; lset('desk_refresh', d.refresh_token||rt); return true;
+  }catch(e){ return false; }
+}
+function logout(){ TOKEN_=''; lset('desk_refresh',''); $('app').classList.add('hidden'); $('login').classList.remove('hidden'); }
+async function sbGet(path){ const r=await fetch(`${URL_}/rest/v1/${path}`,{headers:H()}); if(r.status===401){ if(await tryRefreshToken()) return sbGet(path); logout(); } return r.ok ? r.json() : []; }
+async function sbUpsert(table, rows, conflict){ const r=await fetch(`${URL_}/rest/v1/${table}?on_conflict=${conflict}`,{method:'POST',headers:H({Prefer:'resolution=merge-duplicates,return=minimal'}),body:JSON.stringify(rows)}); return r.ok; }
+async function sbDelete(path){ const r=await fetch(`${URL_}/rest/v1/${path}`,{method:'DELETE',headers:H({Prefer:'return=minimal'})}); return r.ok; }
+
+async function refresh(){
+  const [pos, watch, fund, ins, px] = await Promise.all([
+    sbGet('desk_positions?select=*&order=symbol'), sbGet('desk_watch?select=*&order=symbol'),
+    sbGet('desk_fundamentals?select=*'), sbGet('desk_insider?select=*'), sbGet('desk_prices?select=symbol,asof,closes')]);
+  _pos=pos||[]; _watch=watch||[]; _fund={}; _ins={}; _px={};
+  (fund||[]).forEach(r=>_fund[r.symbol]=r); (ins||[]).forEach(r=>_ins[r.symbol]=r); (px||[]).forEach(r=>_px[r.symbol]=r);
+  const latest = Object.values(_fund).map(r=>r.asof).sort().pop();
+  $('asof').textContent = latest ? '자료 '+new Date(latest).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '수집 자료 없음 — collector 를 돌리세요';
+  drawAll();
+}
+function showTab(t){ _tab=t; document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('hidden', p.dataset.pane!==t)); if(t==='detail') drawDetail(); }
+function drawAll(){ drawPort(); drawWatch(); drawCompare(); if(_tab==='detail') drawDetail(); }
+
+// ── 지표 공통 ──
+function metrics(sym){
+  const f=(_fund[sym]||{}), d=f.data||{}, ins=(_ins[sym]||{}).data||{};
+  const closes=((_px[sym]||{}).closes)||[];
+  const price=f.price, prev=closes.length>1?closes[closes.length-2].c:null;
+  const buy6=ins.buy_6m||{}, sell6=ins.sell_6m||{}, buy12=ins.buy_12m||{}, sell12=ins.sell_12m||{};
+  return { sym, name:f.name||'', price, chg: (price&&prev)?price/prev-1:null, per:d.per, pbr:d.pbr, peg:d.peg, peg_basis:d.peg_basis, roe:d.roe,
+    sh1:d.shares_chg_1y, sh3:d.shares_chg_3y, bb:d.buyback_ttm, bby:d.buyback_yield, mcap:d.mcap, eps_g:d.eps_cagr_3y??d.eps_growth_1y, rev_g:d.rev_growth_1y, margin:d.net_margin,
+    ib6:buy6.n||0, ibv6:buy6.value||0, is6:sell6.n||0, isv6:sell6.value||0, ib12:buy12.n||0, ibv12:buy12.value||0, is12:sell12.n||0, isv12:sell12.value||0, last:d.last_report, d, ins, closes };
+}
+const cls = (v, good, bad) => v==null ? '' : (good(v) ? 'up' : (bad && bad(v)) ? 'dn' : '');
+function metricCells(m){
+  return `<td class="${cls(m.per, v=>v>0&&v<15, v=>v<0||v>40)}">${fmt(m.per,1)}</td>
+    <td class="${cls(m.pbr, v=>v>0&&v<2, v=>v>10)}">${fmt(m.pbr,2)}</td>
+    <td class="${cls(m.peg, v=>v>0&&v<1, v=>v<0||v>3)}" title="PEG 기준: ${esc(m.peg_basis||'')}">${fmt(m.peg,2)}</td>
+    <td class="${cls(m.roe, v=>v>0.15, v=>v<0)}">${pct(m.roe)}</td>
+    <td class="${cls(m.sh1, v=>v<-0.005, v=>v>0.02)}" title="3년 ${pct(m.sh3)}">${pct(m.sh1)}</td>
+    <td class="${cls(m.bby, v=>v>0.02, null)}" title="최근 4분기 자사주 매입 ${money(m.bb)}">${pct(m.bby)}</td>
+    <td class="${m.ib6>0?'up':''}" title="12개월 ${m.ib12}건 ${money(m.ibv12)}">${m.ib6?`${m.ib6}건 ${money(m.ibv6)}`:'-'}</td>
+    <td class="${m.is6>0?'dn':''}" title="12개월 ${m.is12}건 ${money(m.isv12)}">${m.is6?`${m.is6}건 ${money(m.isv6)}`:'-'}</td>`;
+}
+const metricHead = `<th>PER</th><th>PBR</th><th>PEG</th><th>ROE</th><th>주식수 1y</th><th>자사주 매입률</th><th>내부자 매수 6m</th><th>내부자 매도 6m</th>`;
+function sortRows(rows, key){ const [k,dir]=_sort[key]; return rows.slice().sort((a,b)=>{ const x=a[k], y=b[k]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==='string' ? x.localeCompare(y) : x-y)*dir; }); }
+function setSort(key, col){ const s=_sort[key]; _sort[key] = (s[0]===col) ? [col, -s[1]] : [col, 1]; drawAll(); }
+const th = (key, col, label, left) => `<th class="${left?'l':''}" onclick="setSort('${key}','${col}')">${label}${_sort[key][0]===col?(_sort[key][1]>0?' ▲':' ▼'):''}</th>`;
+
+// ── 보유 ──
+function drawPort(){
+  const rows = _pos.map(p=>{ const m=metrics(p.symbol); const val=(m.price||0)*p.qty, cost=p.avg_cost*p.qty; return Object.assign({}, m, {acct:p.account, qty:p.qty, avg:p.avg_cost, val, cost, pnl:val-cost, pnlp: cost?val/cost-1:null, note:p.note||''}); });
+  const tot = rows.reduce((a,r)=>a+r.val,0), cost=rows.reduce((a,r)=>a+r.cost,0), day=rows.reduce((a,r)=>a+(r.chg!=null?r.val-r.val/(1+r.chg):0),0);
+  $('port_sum').innerHTML = `<div class="k"><b>${money(tot)}</b><span>평가액</span></div><div class="k"><b class="${tot-cost>=0?'up':'dn'}">${money(tot-cost)} (${pct(cost?tot/cost-1:null)})</b><span>평가손익</span></div>
+    <div class="k"><b class="${day>=0?'up':'dn'}">${money(day)}</b><span>오늘 변동</span></div><div class="k"><b>${rows.length}</b><span>종목</span></div>`;
+  const sorted = sortRows(rows,'port');
+  $('port_tbl').innerHTML = `<tr>${th('port','sym','종목',1)}${th('port','acct','계좌',1)}${th('port','price','현재가')}${th('port','chg','일간')}${th('port','qty','수량')}${th('port','avg','평단')}${th('port','val','평가액')}${th('port','pnlp','손익')}${th('port','per','PER')}${th('port','pbr','PBR')}${th('port','peg','PEG')}${th('port','roe','ROE')}${th('port','sh1','주식수 1y')}${th('port','bby','자사주')}<th>내부자 6m</th><th></th></tr>` +
+    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td><td class="l">${esc(r.acct)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td>${fmt(r.qty,0)}</td><td>${fmt(r.avg)}</td><td>${money(r.val)}</td><td class="${r.pnl>=0?'up':'dn'}">${money(r.pnl)}<br><span class="mute">${pct(r.pnlp)}</span></td>
+      <td class="${cls(r.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(r.per,1)}</td><td class="${cls(r.pbr,v=>v>0&&v<2,v=>v>10)}">${fmt(r.pbr,2)}</td><td class="${cls(r.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(r.peg,2)}</td><td class="${cls(r.roe,v=>v>0.15,v=>v<0)}">${pct(r.roe)}</td><td class="${cls(r.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(r.sh1)}</td><td class="${cls(r.bby,v=>v>0.02,null)}">${pct(r.bby)}</td>
+      <td>${r.ib6?`<span class="up">매수 ${r.ib6}</span>`:''}${r.is6?` <span class="dn">매도 ${r.is6}</span>`:''}</td><td><button class="ghost" onclick="event.stopPropagation();delPos('${r.sym}','${esc(r.acct).replace(/'/g,'')}')">✕</button></td></tr>`).join('') || '<tr><td colspan="16" class="mute l">보유 종목을 추가하세요</td></tr>');
+}
+async function addPos(){
+  const sym=$('p_sym').value.trim().toUpperCase(), acct=$('p_acct').value.trim(), qty=Number($('p_qty').value)||0, avg=Number($('p_avg').value)||0;
+  if(!sym) return; await sbUpsert('desk_positions',[{symbol:sym, account:acct, qty, avg_cost:avg, updated_at:new Date().toISOString()}],'user_id,symbol,account');
+  $('p_sym').value=''; $('p_qty').value=''; $('p_avg').value=''; refresh();
+}
+async function delPos(sym, acct){ if(!confirm(`${sym} (${acct||'계좌 없음'}) 보유 기록을 지울까요?`)) return; await sbDelete(`desk_positions?symbol=eq.${encodeURIComponent(sym)}&account=eq.${encodeURIComponent(acct)}`); refresh(); }
+function togglePaste(){ $('paste_box').classList.toggle('hidden'); }
+async function pastePos(){
+  const lines=$('paste').value.split(/\n/).map(l=>l.trim()).filter(Boolean); const rows=[];
+  for(const l of lines){ const c=l.split(/[\t,]|\s{2,}/).map(x=>x.trim()).filter(x=>x!==''); if(c.length<3) continue; const sym=c[0].toUpperCase().replace(/[^A-Z.\-]/g,''); if(!sym) continue;
+    rows.push({symbol:sym, qty:Number(String(c[1]).replace(/,/g,''))||0, avg_cost:Number(String(c[2]).replace(/[$,]/g,''))||0, account:c[3]||'', updated_at:new Date().toISOString()}); }
+  if(!rows.length){ alert('읽을 수 있는 줄이 없습니다 (티커 수량 평단 [계좌])'); return; }
+  await sbUpsert('desk_positions', rows, 'user_id,symbol,account'); $('paste').value=''; refresh();
+}
+
+// ── 관심 ──
+function drawWatch(){
+  const rows=_watch.map(w=>Object.assign({}, metrics(w.symbol), {tags:w.tags||'', target:w.target, stop:w.stop, thesis:w.thesis||''}));
+  const sorted=sortRows(rows,'watch');
+  $('watch_tbl').innerHTML = `<tr>${th('watch','sym','종목',1)}${th('watch','tags','태그',1)}${th('watch','price','현재가')}${th('watch','chg','일간')}${th('watch','target','목표가')}${th('watch','stop','손절가')}${metricHead}<th></th></tr>` +
+    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td><td class="l">${esc(r.tags)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td>
+      <td class="${r.target&&r.price&&r.price>=r.target?'up':''}">${fmt(r.target)}</td><td class="${r.stop&&r.price&&r.price<=r.stop?'dn':''}">${fmt(r.stop)}</td>${metricCells(r)}<td><button class="ghost" onclick="event.stopPropagation();delWatch('${r.sym}')">✕</button></td></tr>`).join('') || '<tr><td colspan="16" class="mute l">관심 종목을 추가하세요</td></tr>');
+}
+async function addWatch(){ const sym=$('w_sym').value.trim().toUpperCase(); if(!sym) return; await sbUpsert('desk_watch',[{symbol:sym, tags:$('w_tags').value.trim(), updated_at:new Date().toISOString()}],'user_id,symbol'); $('w_sym').value=''; refresh(); }
+async function delWatch(sym){ if(!confirm(`${sym} 관심 목록에서 지울까요? (메모도 지워짐)`)) return; await sbDelete(`desk_watch?symbol=eq.${encodeURIComponent(sym)}`); refresh(); }
+
+// ── 비교표 ──
+function drawCompare(){
+  const syms=[...new Set([..._pos.map(p=>p.symbol), ..._watch.map(w=>w.symbol)])];
+  const rows=syms.map(s=>Object.assign(metrics(s), {held:_pos.some(p=>p.symbol===s)}));
+  const sorted=sortRows(rows,'all');
+  $('all_tbl').innerHTML = `<tr>${th('all','sym','종목',1)}${th('all','price','현재가')}${th('all','chg','일간')}${th('all','mcap','시총')}${th('all','per','PER')}${th('all','pbr','PBR')}${th('all','peg','PEG')}${th('all','roe','ROE')}${th('all','margin','순이익률')}${th('all','eps_g','이익성장')}${th('all','rev_g','매출성장')}${th('all','sh1','주식수 1y')}${th('all','sh3','주식수 3y')}${th('all','bby','자사주')}${th('all','ibv6','내부자 매수 6m')}${th('all','isv6','내부자 매도 6m')}${th('all','last','최근 보고')}</tr>` +
+    sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b>${r.held?'<span class="pill">보유</span>':''} <span class="mute">${esc(r.name).slice(0,20)}</span></td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td>${money(r.mcap)}</td>
+      <td class="${cls(r.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(r.per,1)}</td><td class="${cls(r.pbr,v=>v>0&&v<2,v=>v>10)}">${fmt(r.pbr,2)}</td><td class="${cls(r.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(r.peg,2)}</td><td class="${cls(r.roe,v=>v>0.15,v=>v<0)}">${pct(r.roe)}</td><td>${pct(r.margin)}</td><td class="${cls(r.eps_g,v=>v>0.15,v=>v<0)}">${pct(r.eps_g,0)}</td><td class="${cls(r.rev_g,v=>v>0.1,v=>v<0)}">${pct(r.rev_g,0)}</td>
+      <td class="${cls(r.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(r.sh1)}</td><td class="${cls(r.sh3,v=>v<-0.02,v=>v>0.05)}">${pct(r.sh3)}</td><td class="${cls(r.bby,v=>v>0.02,null)}">${pct(r.bby)}</td><td class="${r.ib6?'up':''}">${r.ib6?`${r.ib6}건 ${money(r.ibv6)}`:'-'}</td><td class="${r.is6?'dn':''}">${r.is6?`${r.is6}건 ${money(r.isv6)}`:'-'}</td><td class="mute">${esc(r.last||'-')}</td></tr>`).join('');
+}
+
+// ── 종목 상세 ──
+function openDetail(sym){ _sel=sym; showTab('detail'); }
+function spark(closes, w=600, h=120){
+  if(!closes||closes.length<2) return '';
+  const vs=closes.map(c=>c.c), mn=Math.min(...vs), mx=Math.max(...vs), rng=(mx-mn)||1;
+  const pts=vs.map((v,i)=>`${(i/(vs.length-1)*w).toFixed(1)},${(h-8-(v-mn)/rng*(h-16)).toFixed(1)}`).join(' ');
+  const up=vs[vs.length-1]>=vs[0];
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}"><polyline fill="none" stroke="${up?'#1DB954':'#e24b4a'}" stroke-width="1.5" points="${pts}"/><text x="2" y="10">${fmt(mx)}</text><text x="2" y="${h-2}">${fmt(mn)}</text><text x="${w-70}" y="${h-2}">${closes[0].d} ~ ${closes[closes.length-1].d}</text></svg>`;
+}
+function bars(items, fmtv, w=600, h=110){
+  if(!items||!items.length) return '<span class="mute">자료 없음</span>';
+  const vs=items.map(i=>i.val), mx=Math.max(...vs.map(Math.abs))||1, bw=w/items.length;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${items.map((it,i)=>{ const bh=Math.abs(it.val)/mx*(h-30); const y=it.val>=0?(h-20-bh):(h-20); return `<rect x="${(i*bw+2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${bh.toFixed(1)}" fill="${it.val>=0?'#5b8def':'#e24b4a'}"/><text x="${(i*bw+bw/2).toFixed(1)}" y="${h-6}" text-anchor="middle">${it.end.slice(2,7)}</text><text x="${(i*bw+bw/2).toFixed(1)}" y="${(y-2).toFixed(1)}" text-anchor="middle">${fmtv(it.val)}</text>`; }).join('')}</svg>`;
+}
+function drawDetail(){
+  const box=$('detail'); if(!box) return;
+  const syms=[...new Set([..._pos.map(p=>p.symbol), ..._watch.map(w=>w.symbol)])];
+  if(!_sel && syms.length) _sel=syms[0];
+  if(!_sel){ box.innerHTML='<div class="mute">보유나 관심 종목을 먼저 추가하세요.</div>'; return; }
+  const m=metrics(_sel), d=m.d, ins=m.ins, w=_watch.find(x=>x.symbol===_sel)||{}, pos=_pos.filter(p=>p.symbol===_sel);
+  const sel = `<select onchange="openDetail(this.value)">${syms.map(s=>`<option ${s===_sel?'selected':''}>${s}</option>`).join('')}</select>`;
+  const recent=(ins.recent||[]).slice(0,25);
+  box.innerHTML = `
+    <div class="top">${sel}<h2 style="margin:0">${esc(m.name)}</h2><span class="mute">${_sel} · CIK ${esc((_fund[_sel]||{}).cik||'-')} · 최근 보고 ${esc(m.last||'-')}</span></div>
+    <div class="kpi" style="margin:10px 0">
+      <div class="k"><b>${fmt(m.price)}</b><span>현재가 <span class="${m.chg>=0?'up':'dn'}">${pct(m.chg)}</span></span></div>
+      <div class="k"><b>${money(m.mcap)}</b><span>시가총액</span></div>
+      <div class="k"><b class="${cls(m.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(m.per,1)}</b><span>PER (TTM)</span></div>
+      <div class="k"><b class="${cls(m.pbr,v=>v>0&&v<2,v=>v>10)}">${fmt(m.pbr,2)}</b><span>PBR</span></div>
+      <div class="k"><b class="${cls(m.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(m.peg,2)}</b><span>PEG (${esc(m.peg_basis||'-')} 이익성장 ${pct(m.eps_g,0)})</span></div>
+      <div class="k"><b class="${cls(m.roe,v=>v>0.15,v=>v<0)}">${pct(m.roe)}</b><span>ROE (TTM)</span></div>
+      <div class="k"><b>${pct(m.margin)}</b><span>순이익률</span></div>
+      <div class="k"><b class="${cls(m.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(m.sh1)}</b><span>주식수 1년 (3년 ${pct(m.sh3)})</span></div>
+      <div class="k"><b>${money(m.bb)}</b><span>자사주 매입 TTM (${pct(m.bby)} of 시총)</span></div>
+      <div class="k"><b class="${m.ib6?'up':''}">${m.ib6}건 ${money(m.ibv6)}</b><span>내부자 매수 6개월</span></div>
+      <div class="k"><b class="${m.is6?'dn':''}">${m.is6}건 ${money(m.isv6)}</b><span>내부자 매도 6개월</span></div>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
+      <div class="card"><h2 style="margin-top:0">1년 가격</h2>${spark(m.closes)}</div>
+      <div class="card"><h2 style="margin-top:0">분기 주당순이익 (순이익÷현재 주식수)</h2>${bars(d.eps_q||[], v=>v.toFixed(2))}</div>
+      <div class="card"><h2 style="margin-top:0">분기 매출</h2>${bars(d.rev_q||[], v=>(v/1e9).toFixed(1)+'B')}</div>
+      <div class="card"><h2 style="margin-top:0">발행 주식수 추이</h2>${bars((d.shares_hist||[]).slice(-12).map(x=>({end:x.end,val:x.val})), v=>(v/1e6).toFixed(0)+'M')}</div>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));margin-top:10px">
+      <div class="card"><h2 style="margin-top:0">내 메모 · 투자 논지</h2>
+        <div class="srow"><label>목표가</label><input id="d_target" value="${w.target??''}" style="width:90px"><label>손절가</label><input id="d_stop" value="${w.stop??''}" style="width:90px"><label>태그</label><input id="d_tags" value="${esc(w.tags||'')}" style="width:160px"></div>
+        <textarea id="d_thesis" placeholder="왜 사는가 / 언제 파는가 / 확인할 것">${esc(w.thesis||'')}</textarea>
+        <div class="srow"><button class="primary" onclick="saveNote('${_sel}')">저장</button><span id="d_msg" class="mute"></span>${pos.length?`<span class="mute">보유: ${pos.map(p=>`${esc(p.account||'-')} ${fmt(p.qty,0)}주 @${fmt(p.avg_cost)}`).join(' · ')}</span>`:''}</div>
+      </div>
+      <div class="card"><h2 style="margin-top:0">내부자 거래 (Form 4, 장내 매수 P / 매도 S)</h2>
+        <div class="wrap" style="max-height:320px"><table><tr><th class="l">일자</th><th class="l">이름</th><th class="l">직위</th><th>구분</th><th>수량</th><th>단가</th><th>금액</th><th>거래 후 보유</th></tr>
+        ${recent.map(t=>`<tr><td class="l">${esc(t.date)}</td><td class="l">${esc(t.owner)}</td><td class="l mute">${esc(t.title)}</td><td class="${t.code==='P'?'up':'dn'}">${t.code==='P'?'매수':'매도'}</td><td>${fmt(t.shares,0)}</td><td>${fmt(t.price)}</td><td>${money(t.value)}</td><td>${esc(t.after)}</td></tr>`).join('') || '<tr><td colspan="8" class="mute l">최근 12개월 장내 매수·매도 없음</td></tr>'}</table></div>
+        <div class="mute" style="margin-top:6px">출처 SEC EDGAR. 옵션 행사(M)·부여(A)·세금 납부 처분(F)은 제외.</div>
+      </div>
+    </div>`;
+}
+async function saveNote(sym){
+  const row={symbol:sym, target:Number($('d_target').value)||null, stop:Number($('d_stop').value)||null, tags:$('d_tags').value.trim(), thesis:$('d_thesis').value, updated_at:new Date().toISOString()};
+  const ok=await sbUpsert('desk_watch',[row],'user_id,symbol'); $('d_msg').textContent= ok?'저장됨':'실패'; if(ok){ const i=_watch.findIndex(w=>w.symbol===sym); if(i>=0) Object.assign(_watch[i],row); else _watch.push(row); drawWatch(); }
+}
+
+(async ()=>{
+  if(!URL_||!KEY_){ $('login_msg').textContent='Supabase 설정이 비어 있습니다 (publish 스크립트로 주입).'; }
+  $('email').value=lget('desk_email','');
+  if(await tryRefreshToken()){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('who').textContent=lget('desk_email',''); refresh(); }
+})();
+</script>
+</body>
+</html>

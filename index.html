@@ -53,22 +53,23 @@
     <button data-tab="detail" onclick="showTab('detail')">종목</button>
   </div>
 
+  <div id="owner_chips" class="srow"></div>
   <div class="pane" data-pane="port">
     <div class="card">
       <div class="srow">
-        <b>종목 추가</b> <input id="p_sym" placeholder="티커 (예: NVDA)" style="width:110px;text-transform:uppercase">
+        <b>종목 추가</b> <input id="p_owner" placeholder="사람 (예: 나, 유라)" style="width:100px" list="owners"><input id="p_sym" placeholder="티커 (예: NVDA)" style="width:110px;text-transform:uppercase">
         <input id="p_acct" placeholder="계좌/증권사" style="width:120px"><input id="p_qty" placeholder="수량" style="width:80px"><input id="p_avg" placeholder="평단($)" style="width:90px">
         <button class="primary" onclick="addPos()">추가</button>
         <button class="ghost" onclick="togglePaste()">엑셀 붙여넣기 ▾</button>
       </div>
-      <div id="paste_box" class="hidden"><textarea id="paste" placeholder="티커 [탭] 수량 [탭] 평단 [탭] 계좌  — 한 줄에 하나 (계좌 생략 가능)"></textarea><div class="srow"><button onclick="pastePos()">가져오기</button></div></div>
+      <div id="paste_box" class="hidden"><textarea id="paste" placeholder="티커 [탭] 수량 [탭] 평단 [탭] 계좌  — 한 줄에 하나 (계좌 생략 가능). 사람은 위 사람 칸 값으로 들어갑니다"></textarea><datalist id="owners"></datalist><div class="srow"><button onclick="pastePos()">가져오기</button></div></div>
     </div>
     <div id="port_sum" class="kpi" style="margin:10px 0"></div>
     <div class="card wrap"><table id="port_tbl"></table></div>
   </div>
 
   <div class="pane hidden" data-pane="watch">
-    <div class="card"><div class="srow"><b>관심 추가</b> <input id="w_sym" placeholder="티커" style="width:110px;text-transform:uppercase"><input id="w_tags" placeholder="태그 (예: 반도체, 배당)" style="width:200px"><button class="primary" onclick="addWatch()">추가</button></div></div>
+    <div class="card"><div class="srow"><b>관심 추가</b> <input id="w_owner" placeholder="사람" style="width:100px" list="owners"><input id="w_sym" placeholder="티커" style="width:110px;text-transform:uppercase"><input id="w_tags" placeholder="태그 (예: 반도체, 배당)" style="width:200px"><button class="primary" onclick="addWatch()">추가</button></div></div>
     <div class="card wrap" style="margin-top:10px"><table id="watch_tbl"></table></div>
   </div>
 
@@ -85,6 +86,7 @@ const DEFAULT_URL = '';
 const DEFAULT_KEY = '';
 let URL_ = DEFAULT_URL, KEY_ = DEFAULT_KEY, TOKEN_ = '', USER_ = null;
 let _pos = [], _watch = [], _fund = {}, _ins = {}, _px = {}, _tab = 'port', _sel = '', _sort = {all:['symbol',1], port:['symbol',1], watch:['symbol',1]};
+let _owner = (()=>{ try { return localStorage.getItem('desk_owner')||''; } catch(e){ return ''; } })();   // ''=전체
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (v, d=2) => (v==null||isNaN(v)) ? '-' : Number(v).toLocaleString('en-US',{minimumFractionDigits:d, maximumFractionDigits:d});
@@ -129,7 +131,17 @@ async function refresh(){
   drawAll();
 }
 function showTab(t){ _tab=t; document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('hidden', p.dataset.pane!==t)); if(t==='detail') drawDetail(); }
-function drawAll(){ drawPort(); drawWatch(); drawCompare(); if(_tab==='detail') drawDetail(); }
+function owners(){ return [...new Set([..._pos.map(p=>p.owner||'나'), ..._watch.map(w=>w.owner||'나')])].sort((a,b)=>a.localeCompare(b,'ko')); }
+function setOwner(o){ _owner=o||''; lset('desk_owner',_owner); drawAll(); }
+function curOwner(){ return _owner || '나'; }
+const byOwner = r => !_owner || (r.owner||'나')===_owner;
+function drawChips(){
+  const os=owners(); const box=$('owner_chips'); if(!box) return;
+  box.innerHTML = os.length>1 ? [''].concat(os).map(o=>`<button class="${(_owner===o)?'primary':'ghost'}" onclick="setOwner('${esc(o).replace(/'/g,'')}')">${o?('👤 '+esc(o)):'전체'}</button>`).join('') : '';
+  const dl=$('owners'); if(dl) dl.innerHTML=os.map(o=>`<option value="${esc(o)}">`).join('');
+  ['p_owner','w_owner'].forEach(id=>{ const e=$(id); if(e && !e.value) e.value=curOwner(); });
+}
+function drawAll(){ drawChips(); drawPort(); drawWatch(); drawCompare(); if(_tab==='detail') drawDetail(); }
 
 // ── 지표 공통 ──
 function metrics(sym){
@@ -159,46 +171,46 @@ const th = (key, col, label, left) => `<th class="${left?'l':''}" onclick="setSo
 
 // ── 보유 ──
 function drawPort(){
-  const rows = _pos.map(p=>{ const m=metrics(p.symbol); const val=(m.price||0)*p.qty, cost=p.avg_cost*p.qty; return Object.assign({}, m, {acct:p.account, qty:p.qty, avg:p.avg_cost, val, cost, pnl:val-cost, pnlp: cost?val/cost-1:null, note:p.note||''}); });
+  const rows = _pos.filter(byOwner).map(p=>{ const m=metrics(p.symbol); const val=(m.price||0)*p.qty, cost=p.avg_cost*p.qty; return Object.assign({}, m, {owner:p.owner||'나', acct:p.account, qty:p.qty, avg:p.avg_cost, val, cost, pnl:val-cost, pnlp: cost?val/cost-1:null, note:p.note||''}); });
   const tot = rows.reduce((a,r)=>a+r.val,0), cost=rows.reduce((a,r)=>a+r.cost,0), day=rows.reduce((a,r)=>a+(r.chg!=null?r.val-r.val/(1+r.chg):0),0);
   $('port_sum').innerHTML = `<div class="k"><b>${money(tot)}</b><span>평가액</span></div><div class="k"><b class="${tot-cost>=0?'up':'dn'}">${money(tot-cost)} (${pct(cost?tot/cost-1:null)})</b><span>평가손익</span></div>
     <div class="k"><b class="${day>=0?'up':'dn'}">${money(day)}</b><span>오늘 변동</span></div><div class="k"><b>${rows.length}</b><span>종목</span></div>`;
   const sorted = sortRows(rows,'port');
-  $('port_tbl').innerHTML = `<tr>${th('port','sym','종목',1)}${th('port','acct','계좌',1)}${th('port','price','현재가')}${th('port','chg','일간')}${th('port','qty','수량')}${th('port','avg','평단')}${th('port','val','평가액')}${th('port','pnlp','손익')}${th('port','per','PER')}${th('port','pbr','PBR')}${th('port','peg','PEG')}${th('port','roe','ROE')}${th('port','sh1','주식수 1y')}${th('port','bby','자사주')}<th>내부자 6m</th><th></th></tr>` +
-    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td><td class="l">${esc(r.acct)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td>${fmt(r.qty,0)}</td><td>${fmt(r.avg)}</td><td>${money(r.val)}</td><td class="${r.pnl>=0?'up':'dn'}">${money(r.pnl)}<br><span class="mute">${pct(r.pnlp)}</span></td>
+  $('port_tbl').innerHTML = `<tr>${th('port','sym','종목',1)}${_owner?'':th('port','owner','사람',1)}${th('port','acct','계좌',1)}${th('port','price','현재가')}${th('port','chg','일간')}${th('port','qty','수량')}${th('port','avg','평단')}${th('port','val','평가액')}${th('port','pnlp','손익')}${th('port','per','PER')}${th('port','pbr','PBR')}${th('port','peg','PEG')}${th('port','roe','ROE')}${th('port','sh1','주식수 1y')}${th('port','bby','자사주')}<th>내부자 6m</th><th></th></tr>` +
+    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td>${_owner?'':`<td class="l">${esc(r.owner)}</td>`}<td class="l">${esc(r.acct)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td>${fmt(r.qty,0)}</td><td>${fmt(r.avg)}</td><td>${money(r.val)}</td><td class="${r.pnl>=0?'up':'dn'}">${money(r.pnl)}<br><span class="mute">${pct(r.pnlp)}</span></td>
       <td class="${cls(r.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(r.per,1)}</td><td class="${cls(r.pbr,v=>v>0&&v<2,v=>v>10)}">${fmt(r.pbr,2)}</td><td class="${cls(r.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(r.peg,2)}</td><td class="${cls(r.roe,v=>v>0.15,v=>v<0)}">${pct(r.roe)}</td><td class="${cls(r.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(r.sh1)}</td><td class="${cls(r.bby,v=>v>0.02,null)}">${pct(r.bby)}</td>
-      <td>${r.ib6?`<span class="up">매수 ${r.ib6}</span>`:''}${r.is6?` <span class="dn">매도 ${r.is6}</span>`:''}</td><td><button class="ghost" onclick="event.stopPropagation();delPos('${r.sym}','${esc(r.acct).replace(/'/g,'')}')">✕</button></td></tr>`).join('') || '<tr><td colspan="16" class="mute l">보유 종목을 추가하세요</td></tr>');
+      <td>${r.ib6?`<span class="up">매수 ${r.ib6}</span>`:''}${r.is6?` <span class="dn">매도 ${r.is6}</span>`:''}</td><td><button class="ghost" onclick="event.stopPropagation();delPos('${r.sym}','${esc(r.acct).replace(/'/g,'')}','${esc(r.owner).replace(/'/g,'')}')">✕</button></td></tr>`).join('') || '<tr><td colspan="16" class="mute l">보유 종목을 추가하세요</td></tr>');
 }
 async function addPos(){
-  const sym=$('p_sym').value.trim().toUpperCase(), acct=$('p_acct').value.trim(), qty=Number($('p_qty').value)||0, avg=Number($('p_avg').value)||0;
-  if(!sym) return; await sbUpsert('desk_positions',[{symbol:sym, account:acct, qty, avg_cost:avg, updated_at:new Date().toISOString()}],'user_id,symbol,account');
+  const sym=$('p_sym').value.trim().toUpperCase(), acct=$('p_acct').value.trim(), qty=Number($('p_qty').value)||0, avg=Number($('p_avg').value)||0, owner=($('p_owner').value.trim()||'나');
+  if(!sym) return; await sbUpsert('desk_positions',[{owner, symbol:sym, account:acct, qty, avg_cost:avg, updated_at:new Date().toISOString()}],'user_id,owner,symbol,account');
   $('p_sym').value=''; $('p_qty').value=''; $('p_avg').value=''; refresh();
 }
-async function delPos(sym, acct){ if(!confirm(`${sym} (${acct||'계좌 없음'}) 보유 기록을 지울까요?`)) return; await sbDelete(`desk_positions?symbol=eq.${encodeURIComponent(sym)}&account=eq.${encodeURIComponent(acct)}`); refresh(); }
+async function delPos(sym, acct, owner){ if(!confirm(`${owner} · ${sym} (${acct||'계좌 없음'}) 보유 기록을 지울까요?`)) return; await sbDelete(`desk_positions?symbol=eq.${encodeURIComponent(sym)}&account=eq.${encodeURIComponent(acct)}&owner=eq.${encodeURIComponent(owner)}`); refresh(); }
 function togglePaste(){ $('paste_box').classList.toggle('hidden'); }
 async function pastePos(){
   const lines=$('paste').value.split(/\n/).map(l=>l.trim()).filter(Boolean); const rows=[];
   for(const l of lines){ const c=l.split(/[\t,]|\s{2,}/).map(x=>x.trim()).filter(x=>x!==''); if(c.length<3) continue; const sym=c[0].toUpperCase().replace(/[^A-Z.\-]/g,''); if(!sym) continue;
-    rows.push({symbol:sym, qty:Number(String(c[1]).replace(/,/g,''))||0, avg_cost:Number(String(c[2]).replace(/[$,]/g,''))||0, account:c[3]||'', updated_at:new Date().toISOString()}); }
+    rows.push({owner:($('p_owner').value.trim()||'나'), symbol:sym, qty:Number(String(c[1]).replace(/,/g,''))||0, avg_cost:Number(String(c[2]).replace(/[$,]/g,''))||0, account:c[3]||'', updated_at:new Date().toISOString()}); }
   if(!rows.length){ alert('읽을 수 있는 줄이 없습니다 (티커 수량 평단 [계좌])'); return; }
-  await sbUpsert('desk_positions', rows, 'user_id,symbol,account'); $('paste').value=''; refresh();
+  await sbUpsert('desk_positions', rows, 'user_id,owner,symbol,account'); $('paste').value=''; refresh();
 }
 
 // ── 관심 ──
 function drawWatch(){
-  const rows=_watch.map(w=>Object.assign({}, metrics(w.symbol), {tags:w.tags||'', target:w.target, stop:w.stop, thesis:w.thesis||''}));
+  const rows=_watch.filter(byOwner).map(w=>Object.assign({}, metrics(w.symbol), {owner:w.owner||'나', tags:w.tags||'', target:w.target, stop:w.stop, thesis:w.thesis||''}));
   const sorted=sortRows(rows,'watch');
-  $('watch_tbl').innerHTML = `<tr>${th('watch','sym','종목',1)}${th('watch','tags','태그',1)}${th('watch','price','현재가')}${th('watch','chg','일간')}${th('watch','target','목표가')}${th('watch','stop','손절가')}${metricHead}<th></th></tr>` +
-    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td><td class="l">${esc(r.tags)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td>
-      <td class="${r.target&&r.price&&r.price>=r.target?'up':''}">${fmt(r.target)}</td><td class="${r.stop&&r.price&&r.price<=r.stop?'dn':''}">${fmt(r.stop)}</td>${metricCells(r)}<td><button class="ghost" onclick="event.stopPropagation();delWatch('${r.sym}')">✕</button></td></tr>`).join('') || '<tr><td colspan="16" class="mute l">관심 종목을 추가하세요</td></tr>');
+  $('watch_tbl').innerHTML = `<tr>${th('watch','sym','종목',1)}${_owner?'':th('watch','owner','사람',1)}${th('watch','tags','태그',1)}${th('watch','price','현재가')}${th('watch','chg','일간')}${th('watch','target','목표가')}${th('watch','stop','손절가')}${metricHead}<th></th></tr>` +
+    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td>${_owner?'':`<td class="l">${esc(r.owner)}</td>`}<td class="l">${esc(r.tags)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td>
+      <td class="${r.target&&r.price&&r.price>=r.target?'up':''}">${fmt(r.target)}</td><td class="${r.stop&&r.price&&r.price<=r.stop?'dn':''}">${fmt(r.stop)}</td>${metricCells(r)}<td><button class="ghost" onclick="event.stopPropagation();delWatch('${r.sym}','${esc(r.owner).replace(/'/g,'')}')">✕</button></td></tr>`).join('') || '<tr><td colspan="16" class="mute l">관심 종목을 추가하세요</td></tr>');
 }
-async function addWatch(){ const sym=$('w_sym').value.trim().toUpperCase(); if(!sym) return; await sbUpsert('desk_watch',[{symbol:sym, tags:$('w_tags').value.trim(), updated_at:new Date().toISOString()}],'user_id,symbol'); $('w_sym').value=''; refresh(); }
-async function delWatch(sym){ if(!confirm(`${sym} 관심 목록에서 지울까요? (메모도 지워짐)`)) return; await sbDelete(`desk_watch?symbol=eq.${encodeURIComponent(sym)}`); refresh(); }
+async function addWatch(){ const sym=$('w_sym').value.trim().toUpperCase(), owner=($('w_owner').value.trim()||'나'); if(!sym) return; await sbUpsert('desk_watch',[{owner, symbol:sym, tags:$('w_tags').value.trim(), updated_at:new Date().toISOString()}],'user_id,owner,symbol'); $('w_sym').value=''; refresh(); }
+async function delWatch(sym, owner){ if(!confirm(`${owner} · ${sym} 관심 목록에서 지울까요? (메모도 지워짐)`)) return; await sbDelete(`desk_watch?symbol=eq.${encodeURIComponent(sym)}&owner=eq.${encodeURIComponent(owner)}`); refresh(); }
 
 // ── 비교표 ──
 function drawCompare(){
-  const syms=[...new Set([..._pos.map(p=>p.symbol), ..._watch.map(w=>w.symbol)])];
-  const rows=syms.map(s=>Object.assign(metrics(s), {held:_pos.some(p=>p.symbol===s)}));
+  const syms=[...new Set([..._pos.filter(byOwner).map(p=>p.symbol), ..._watch.filter(byOwner).map(w=>w.symbol)])];
+  const rows=syms.map(s=>Object.assign(metrics(s), {held:_pos.filter(byOwner).some(p=>p.symbol===s)}));
   const sorted=sortRows(rows,'all');
   $('all_tbl').innerHTML = `<tr>${th('all','sym','종목',1)}${th('all','price','현재가')}${th('all','chg','일간')}${th('all','mcap','시총')}${th('all','per','PER')}${th('all','pbr','PBR')}${th('all','peg','PEG')}${th('all','roe','ROE')}${th('all','margin','순이익률')}${th('all','eps_g','이익성장')}${th('all','rev_g','매출성장')}${th('all','sh1','주식수 1y')}${th('all','sh3','주식수 3y')}${th('all','bby','자사주')}${th('all','ibv6','내부자 매수 6m')}${th('all','isv6','내부자 매도 6m')}${th('all','last','최근 보고')}</tr>` +
     sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b>${r.held?'<span class="pill">보유</span>':''} <span class="mute">${esc(r.name).slice(0,20)}</span></td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td>${money(r.mcap)}</td>
@@ -222,10 +234,10 @@ function bars(items, fmtv, w=600, h=110){
 }
 function drawDetail(){
   const box=$('detail'); if(!box) return;
-  const syms=[...new Set([..._pos.map(p=>p.symbol), ..._watch.map(w=>w.symbol)])];
-  if(!_sel && syms.length) _sel=syms[0];
+  const syms=[...new Set([..._pos.filter(byOwner).map(p=>p.symbol), ..._watch.filter(byOwner).map(w=>w.symbol)])];
+  if((!_sel || syms.indexOf(_sel)<0) && syms.length) _sel=syms[0];
   if(!_sel){ box.innerHTML='<div class="mute">보유나 관심 종목을 먼저 추가하세요.</div>'; return; }
-  const m=metrics(_sel), d=m.d, ins=m.ins, w=_watch.find(x=>x.symbol===_sel)||{}, pos=_pos.filter(p=>p.symbol===_sel);
+  const m=metrics(_sel), d=m.d, ins=m.ins, w=_watch.find(x=>x.symbol===_sel && (x.owner||'나')===curOwner())||_watch.find(x=>x.symbol===_sel)||{}, pos=_pos.filter(p=>p.symbol===_sel && byOwner(p));
   const sel = `<select onchange="openDetail(this.value)">${syms.map(s=>`<option ${s===_sel?'selected':''}>${s}</option>`).join('')}</select>`;
   const recent=(ins.recent||[]).slice(0,25);
   box.innerHTML = `
@@ -262,9 +274,10 @@ function drawDetail(){
       </div>
     </div>`;
 }
+function w_ownerOf(sym){ const w=_watch.find(x=>x.symbol===sym && (x.owner||'나')===curOwner()); return w ? (w.owner||'나') : curOwner(); }
 async function saveNote(sym){
-  const row={symbol:sym, target:Number($('d_target').value)||null, stop:Number($('d_stop').value)||null, tags:$('d_tags').value.trim(), thesis:$('d_thesis').value, updated_at:new Date().toISOString()};
-  const ok=await sbUpsert('desk_watch',[row],'user_id,symbol'); $('d_msg').textContent= ok?'저장됨':'실패'; if(ok){ const i=_watch.findIndex(w=>w.symbol===sym); if(i>=0) Object.assign(_watch[i],row); else _watch.push(row); drawWatch(); }
+  const row={owner:w_ownerOf(sym), symbol:sym, target:Number($('d_target').value)||null, stop:Number($('d_stop').value)||null, tags:$('d_tags').value.trim(), thesis:$('d_thesis').value, updated_at:new Date().toISOString()};
+  const ok=await sbUpsert('desk_watch',[row],'user_id,owner,symbol'); $('d_msg').textContent= ok?'저장됨':'실패'; if(ok){ const i=_watch.findIndex(w=>w.symbol===sym && (w.owner||'나')===row.owner); if(i>=0) Object.assign(_watch[i],row); else _watch.push(row); drawWatch(); }
 }
 
 (async ()=>{

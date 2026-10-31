@@ -100,6 +100,28 @@ def _ttm(qs: list[dict]) -> Optional[float]:
     return float(sum(r["val"] for r in qs[-4:]))
 
 
+def _consecutive_tail(qs: list[dict]) -> list[dict]:
+    """끝에서부터 분기가 연속(end 간격 80~100일)인 구간만 — 신규 상장은 공시된 분기가 띄엄띄엄이라 그냥 더하면 안 됨."""
+    tail = qs[-1:]
+    for i in range(len(qs) - 2, -1, -1):
+        gap = (date.fromisoformat(tail[0]["end"]) - date.fromisoformat(qs[i]["end"])).days
+        if 80 <= gap <= 100:
+            tail.insert(0, qs[i])
+        else:
+            break
+    return tail
+
+
+def _ttm_or_annualized(qs: list[dict]) -> tuple[Optional[float], str]:
+    """연속된 최근 4분기 합(TTM). 4분기가 안 되면(신규 상장 등) 연속 구간 평균×4(연환산)과 표시용 꼬리표."""
+    if not qs:
+        return None, ""
+    tail = _consecutive_tail(qs)
+    if len(tail) >= 4:
+        return float(sum(r["val"] for r in tail[-4:])), "TTM"
+    return float(sum(r["val"] for r in tail)) * 4.0 / len(tail), f"연환산({len(tail)}분기)"
+
+
 def _instant(rows: list[dict]) -> list[dict]:
     """시점값(재무상태표·주식수): start 없는 것만. 같은 end 가 여러 보고서에 반복되면 마지막 것 하나만."""
     by = {}
@@ -132,13 +154,21 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
                        or _series(facts, "SalesRevenueNet", ("USD",)))
     buyback_q = _quarterly(_series(facts, "PaymentsForRepurchaseOfCommonStock", ("USD",)))
     equity = _instant(_series(facts, "StockholdersEquity", ("USD",)) or _series(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", ("USD",)))
-    shares = _split_adjust(_instant(_series(facts, "EntityCommonStockSharesOutstanding", ("shares",)) or _series(facts, "CommonStockSharesOutstanding", ("shares",))), splits or [])
+    shares = _split_adjust(_instant(_series(facts, "EntityCommonStockSharesOutstanding", ("shares",)) or _series(facts, "CommonStockSharesOutstanding", ("shares",))
+                                    or _series(facts, "CommonStockSharesIssued", ("shares",))), splits or [])
+    if not shares:   # 신규 상장: 표지 주식수가 아직 없으면 분기(3개월) 희석 가중평균 주식수로 대체(9개월 누적값은 제외)
+        wa = _series(facts, "WeightedAverageNumberOfDilutedSharesOutstanding", ("shares",)) or _series(facts, "WeightedAverageNumberOfSharesOutstandingBasic", ("shares",))
+        by = {}
+        for r in _quarterly(wa):
+            by[r["end"]] = {"end": r["end"], "val": r["val"]}
+        shares = _split_adjust([by[k] for k in sorted(by)], splits or [])
     out["eps_q"] = [{"end": r["end"], "val": round(float(r["val"]), 3)} for r in eps_q[-12:]]
     out["rev_q"] = [{"end": r["end"], "val": float(r["val"])} for r in rev_q[-12:]]
     out["ni_q"] = [{"end": r["end"], "val": float(r["val"])} for r in ni_q[-12:]]
     out["shares_hist"] = [{"end": r["end"], "val": float(r["val"])} for r in shares[-16:]]
     out["equity_hist"] = [{"end": r["end"], "val": float(r["val"])} for r in equity[-8:]]
-    ni_ttm = _ttm(ni_q); rev_ttm = _ttm(rev_q); bb_ttm = _ttm(buyback_q)
+    ni_ttm, basis = _ttm_or_annualized(ni_q); rev_ttm, _ = _ttm_or_annualized(rev_q); bb_ttm = _ttm(buyback_q)
+    out["basis"] = basis
     sh_now = shares[-1]["val"] if shares else None
     # EPS 는 XBRL 값이 분할 미조정(NVDA 10:1 등)이라 비교가 안 됨 → 순이익 ÷ 현재 주식수로 통일(분할 영향 없음)
     eps_ttm = (ni_ttm / sh_now) if (ni_ttm is not None and sh_now) else None
@@ -150,7 +180,8 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
     # 성장률(EPS ttm 전년 대비, 3년 CAGR)
     def ttm_at(qs, back):
         seg = qs[:len(qs) - back] if back else qs
-        return _ttm(seg)
+        tail = _consecutive_tail(seg) if seg else []
+        return _ttm(tail) if len(tail) >= 4 else None
     e0, e1, e3 = eps_ttm, ttm_at(eps_q, 4), ttm_at(eps_q, 12)
     out["eps_growth_1y"] = (e0 / e1 - 1) if (e0 is not None and e1 and e1 > 0 and e0 > 0) else None
     out["eps_cagr_3y"] = ((e0 / e3) ** (1 / 3) - 1) if (e0 is not None and e3 and e3 > 0 and e0 > 0) else None

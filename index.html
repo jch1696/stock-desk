@@ -245,10 +245,10 @@ function drawDetail(){
     <div class="kpi" style="margin:10px 0">
       <div class="k"><b>${fmt(m.price)}</b><span>현재가 <span class="${m.chg>=0?'up':'dn'}">${pct(m.chg)}</span></span></div>
       <div class="k"><b>${money(m.mcap)}</b><span>시가총액</span></div>
-      <div class="k"><b class="${cls(m.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(m.per,1)}</b><span>PER (TTM)</span></div>
+      <div class="k"><b class="${cls(m.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(m.per,1)}</b><span>PER (${esc(d.basis||'TTM')})</span></div>
       <div class="k"><b class="${cls(m.pbr,v=>v>0&&v<2,v=>v>10)}">${fmt(m.pbr,2)}</b><span>PBR</span></div>
       <div class="k"><b class="${cls(m.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(m.peg,2)}</b><span>PEG (${esc(m.peg_basis||'-')} 이익성장 ${pct(m.eps_g,0)})</span></div>
-      <div class="k"><b class="${cls(m.roe,v=>v>0.15,v=>v<0)}">${pct(m.roe)}</b><span>ROE (TTM)</span></div>
+      <div class="k"><b class="${cls(m.roe,v=>v>0.15,v=>v<0)}">${pct(m.roe)}</b><span>ROE (${esc(d.basis||'TTM')})</span></div>
       <div class="k"><b>${pct(m.margin)}</b><span>순이익률</span></div>
       <div class="k"><b class="${cls(m.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(m.sh1)}</b><span>주식수 1년 (3년 ${pct(m.sh3)})</span></div>
       <div class="k"><b>${money(m.bb)}</b><span>자사주 매입 TTM (${pct(m.bby)} of 시총)</span></div>

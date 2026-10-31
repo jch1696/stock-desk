@@ -101,11 +101,28 @@ def _ttm(qs: list[dict]) -> Optional[float]:
 
 
 def _instant(rows: list[dict]) -> list[dict]:
-    """시점값(재무상태표·주식수): start 없는 것만."""
-    return sorted([r for r in rows if not r.get("start")], key=lambda r: r["end"])
+    """시점값(재무상태표·주식수): start 없는 것만. 같은 end 가 여러 보고서에 반복되면 마지막 것 하나만."""
+    by = {}
+    for r in sorted([r for r in rows if not r.get("start")], key=lambda r: (r["end"], r.get("filed", ""))):
+        by[r["end"]] = r
+    return [by[k] for k in sorted(by)]
 
 
-def fundamentals(cik: str, price: Optional[float]) -> dict:
+def _split_adjust(rows: list[dict], splits: list[dict]) -> list[dict]:
+    """분할(예: 10:1) 전 날짜의 주식수에 비율을 곱해 지금 기준으로 맞춘다."""
+    if not splits:
+        return rows
+    out = []
+    for r in rows:
+        f = 1.0
+        for sp in splits:
+            if r["end"] < sp["date"]:
+                f *= sp["ratio"]
+        out.append(dict(r, val=r["val"] * f))
+    return out
+
+
+def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None) -> dict:
     """PER·PBR·ROE·PEG·주식수 변화·자사주 매입 등. 모두 EDGAR 값 + 현재가로 계산."""
     facts = _get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json").json()
     out: dict = {"name": facts.get("entityName", "")}
@@ -115,7 +132,7 @@ def fundamentals(cik: str, price: Optional[float]) -> dict:
                        or _series(facts, "SalesRevenueNet", ("USD",)))
     buyback_q = _quarterly(_series(facts, "PaymentsForRepurchaseOfCommonStock", ("USD",)))
     equity = _instant(_series(facts, "StockholdersEquity", ("USD",)) or _series(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", ("USD",)))
-    shares = _instant(_series(facts, "EntityCommonStockSharesOutstanding", ("shares",)) or _series(facts, "CommonStockSharesOutstanding", ("shares",)))
+    shares = _split_adjust(_instant(_series(facts, "EntityCommonStockSharesOutstanding", ("shares",)) or _series(facts, "CommonStockSharesOutstanding", ("shares",))), splits or [])
     out["eps_q"] = [{"end": r["end"], "val": round(float(r["val"]), 3)} for r in eps_q[-12:]]
     out["rev_q"] = [{"end": r["end"], "val": float(r["val"])} for r in rev_q[-12:]]
     out["ni_q"] = [{"end": r["end"], "val": float(r["val"])} for r in ni_q[-12:]]

@@ -69,12 +69,25 @@ def yahoo(symbol: str) -> dict:
                      headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
     r.raise_for_status()
     res = r.json()["chart"]["result"][0]
+    # 분할 이벤트(5년) — EDGAR 주식수 이력은 분할 미조정이라 보정에 쓴다
+    splits = []
+    try:
+        r2 = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5y&interval=1mo&events=splits",
+                          headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+        ev = (r2.json()["chart"]["result"][0].get("events") or {}).get("splits") or {}
+        for v in ev.values():
+            d = datetime.fromtimestamp(int(v["date"]), timezone.utc).strftime("%Y-%m-%d")
+            ratio = float(v["numerator"]) / float(v["denominator"])
+            if ratio > 0:
+                splits.append({"date": d, "ratio": ratio})
+    except Exception:
+        pass
     q = res["indicators"]["quote"][0]
     closes = [{"d": datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d"), "c": round(float(c), 2)}
               for t, c in zip(res["timestamp"], q["close"]) if c is not None]
     meta = res.get("meta", {})
     return {"price": float(meta.get("regularMarketPrice") or closes[-1]["c"]), "closes": closes,
-            "name": meta.get("longName") or meta.get("shortName") or ""}
+            "name": meta.get("longName") or meta.get("shortName") or "", "splits": sorted(splits, key=lambda x: x["date"])}
 
 
 def collect(symbol: str, with_insider: bool = True) -> dict:
@@ -84,7 +97,9 @@ def collect(symbol: str, with_insider: bool = True) -> dict:
     out = {"symbol": sym, "price": y["price"], "closes": y["closes"], "name": y["name"] or edgar.name_of(sym), "cik": cik}
     if cik:
         try:
-            out["fund"] = edgar.fundamentals(cik, y["price"])
+            out["fund"] = edgar.fundamentals(cik, y["price"], splits=y.get("splits") or [])
+            if y.get("splits"):
+                out["fund"]["splits"] = y["splits"]
             out["name"] = out["name"] or out["fund"].get("name", "")
         except Exception as e:
             log.warning(f"{sym} 재무 실패: {e}")

@@ -170,6 +170,7 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
     # 주식수: 표지(dei) → 재무상태표 발행주식 → 분기 희석/기본 가중평균 순으로, '최신값이 0보다 큰' 첫 계열을 쓴다
     #   (HOOD 는 CommonStockSharesOutstanding 이 0 으로 보고됨, TEM·신규상장은 표지 주식수가 없음)
     shares = []
+    best_end = ""
     #   표지 주식수가 없으면 '전체' 가중평균(희석)을 재무상태표 발행주식(클래스별로 쪼개져 있을 수 있음, HOOD)보다 먼저 쓴다
     for tag, kind in (("EntityCommonStockSharesOutstanding", "i"), ("WeightedAverageNumberOfDilutedSharesOutstanding", "q"),
                       ("WeightedAverageNumberOfSharesOutstandingBasic", "q"), ("CommonStockSharesOutstanding", "i"), ("CommonStockSharesIssued", "i")):
@@ -184,10 +185,11 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
                 if float(r["val"]) > 0:
                     by[r["end"]] = {"end": r["end"], "val": r["val"]}
             cand = [by[k] for k in sorted(by)]
-        if cand:
+        # 태그마다 쓰이던 시기가 달라서(NKE 는 옛 태그가 2015 에서 끝남) '가장 최근까지 있는' 계열을 고른다
+        if cand and cand[-1]["end"] > best_end:
             shares = _split_adjust(cand, splits or [])
             out["shares_tag"] = tag
-            break
+            best_end = cand[-1]["end"]
     out["eps_q"] = [{"end": r["end"], "val": round(float(r["val"]), 3)} for r in eps_q[-12:]]
     out["rev_q"] = [{"end": r["end"], "val": float(r["val"])} for r in rev_q[-12:]]
     out["ni_q"] = [{"end": r["end"], "val": float(r["val"])} for r in ni_q[-12:]]

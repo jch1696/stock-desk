@@ -94,6 +94,16 @@ def _quarterly(rows: list[dict]) -> list[dict]:
     return sorted(by_end.values(), key=lambda r: r["end"])
 
 
+def _merge_quarterly(series_list: list[list[dict]]) -> list[dict]:
+    """여러 태그의 분기 계열을 end 기준으로 합친다(뒤에 오는 태그가 우선). 이상치(이웃 분기의 1/5 미만·5배 초과)는 버림."""
+    by: dict = {}
+    for ser in series_list:
+        for r in ser or []:
+            by[r["end"]] = r
+    rows = [by[k] for k in sorted(by)]
+    return rows
+
+
 def _ttm(qs: list[dict]) -> Optional[float]:
     if len(qs) < 4:
         return None
@@ -150,8 +160,11 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
     out: dict = {"name": facts.get("entityName", "")}
     eps_q = _quarterly(_series(facts, "EarningsPerShareDiluted", ("USD/shares",)) or _series(facts, "EarningsPerShareBasic", ("USD/shares",)))
     ni_q = _quarterly(_series(facts, "NetIncomeLoss", ("USD",)))
-    rev_q = _quarterly(_series(facts, "Revenues", ("USD",)) or _series(facts, "RevenueFromContractWithCustomerExcludingAssessedTax", ("USD",))
-                       or _series(facts, "SalesRevenueNet", ("USD",)))
+    # 매출 태그는 회사마다·시기마다 다르다(MSFT: 2018 까지 Revenues, 이후 RevenueFromContractWithCustomer…) → 태그별 분기 계열을
+    # 모두 모아 같은 분기(end)는 더 최신 보고 태그 값을 쓰고, 날짜순으로 합친다
+    rev_q = _merge_quarterly([_quarterly(_series(facts, t, ("USD",))) for t in
+                              ("SalesRevenueNet", "Revenues", "RevenueFromContractWithCustomerIncludingAssessedTax",
+                               "RevenueFromContractWithCustomerExcludingAssessedTax")])
     buyback_q = _quarterly(_series(facts, "PaymentsForRepurchaseOfCommonStock", ("USD",)))
     equity = _instant(_series(facts, "StockholdersEquity", ("USD",)) or _series(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", ("USD",)))
     # 주식수: 표지(dei) → 재무상태표 발행주식 → 분기 희석/기본 가중평균 순으로, '최신값이 0보다 큰' 첫 계열을 쓴다

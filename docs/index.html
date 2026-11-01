@@ -26,7 +26,8 @@
   .good{ background:#163d2a; color:#7ee2a8 } .bad{ background:#4a1f1f; color:#f0a0a0 } .warn{ background:#4a3a1a; color:#f0d090 }
   .kpi{ display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px } .kpi .k{ background:#0f1218; border-radius:8px; padding:8px } .kpi .k b{ display:block; font-size:16px } .kpi .k span{ color:var(--mute); font-size:11px }
   textarea{ width:100%; min-height:90px } .srow{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0 }
-  svg text{ fill:var(--mute); font-size:10px }
+  svg text{ fill:var(--mute); font-size:13px }
+  .kpi .k b{ font-size:20px } .kpi .k span{ font-size:12px }
   #login{ max-width:420px; margin:40px auto }
 </style>
 </head>
@@ -220,17 +221,17 @@ function drawCompare(){
 
 // ── 종목 상세 ──
 function openDetail(sym){ _sel=sym; showTab('detail'); }
-function spark(closes, w=600, h=120){
+function spark(closes, w=900, h=220){
   if(!closes||closes.length<2) return '';
   const vs=closes.map(c=>c.c), mn=Math.min(...vs), mx=Math.max(...vs), rng=(mx-mn)||1;
   const pts=vs.map((v,i)=>`${(i/(vs.length-1)*w).toFixed(1)},${(h-8-(v-mn)/rng*(h-16)).toFixed(1)}`).join(' ');
   const up=vs[vs.length-1]>=vs[0];
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}"><polyline fill="none" stroke="${up?'#1DB954':'#e24b4a'}" stroke-width="1.5" points="${pts}"/><text x="2" y="10">${fmt(mx)}</text><text x="2" y="${h-2}">${fmt(mn)}</text><text x="${w-70}" y="${h-2}">${closes[0].d} ~ ${closes[closes.length-1].d}</text></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}"><polyline fill="none" stroke="${up?'#1DB954':'#e24b4a'}" stroke-width="2.5" points="${pts}"/><text x="4" y="16">${fmt(mx)}</text><text x="4" y="${h-4}">${fmt(mn)}</text><text x="${w-190}" y="${h-4}">${closes[0].d} ~ ${closes[closes.length-1].d}</text><text x="${w-110}" y="16" style="fill:${up?'#1DB954':'#e24b4a'};font-size:16px;font-weight:700">${fmt(vs[vs.length-1])}</text></svg>`;
 }
-function bars(items, fmtv, w=600, h=110){
+function bars(items, fmtv, w=900, h=220){
   if(!items||!items.length) return '<span class="mute">자료 없음</span>';
   const vs=items.map(i=>i.val), mx=Math.max(...vs.map(Math.abs))||1, bw=w/items.length;
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${items.map((it,i)=>{ const bh=Math.abs(it.val)/mx*(h-30); const y=it.val>=0?(h-20-bh):(h-20); return `<rect x="${(i*bw+2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${bh.toFixed(1)}" fill="${it.val>=0?'#5b8def':'#e24b4a'}"/><text x="${(i*bw+bw/2).toFixed(1)}" y="${h-6}" text-anchor="middle">${it.end.slice(2,7)}</text><text x="${(i*bw+bw/2).toFixed(1)}" y="${(y-2).toFixed(1)}" text-anchor="middle">${fmtv(it.val)}</text>`; }).join('')}</svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${items.map((it,i)=>{ const bh=Math.abs(it.val)/mx*(h-44); const y=it.val>=0?(h-24-bh):(h-24); return `<rect x="${(i*bw+2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${bh.toFixed(1)}" fill="${it.val>=0?'#5b8def':'#e24b4a'}"/><text x="${(i*bw+bw/2).toFixed(1)}" y="${h-6}" text-anchor="middle">${it.end.slice(2,7)}</text><text x="${(i*bw+bw/2).toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" style="fill:#e6e8ee">${fmtv(it.val)}</text>`; }).join('')}</svg>`;
 }
 function drawDetail(){
   const box=$('detail'); if(!box) return;
@@ -255,13 +256,13 @@ function drawDetail(){
       <div class="k"><b class="${m.ib6?'up':''}">${m.ib6}건 ${money(m.ibv6)}</b><span>내부자 매수 6개월</span></div>
       <div class="k"><b class="${m.is6?'dn':''}">${m.is6}건 ${money(m.isv6)}</b><span>내부자 매도 6개월</span></div>
     </div>
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));max-width:1400px">
       <div class="card"><h2 style="margin-top:0">1년 가격</h2>${spark(m.closes)}</div>
       <div class="card"><h2 style="margin-top:0">분기 주당순이익 (순이익÷현재 주식수)</h2>${bars(d.eps_q||[], v=>v.toFixed(2))}</div>
       <div class="card"><h2 style="margin-top:0">분기 매출</h2>${bars(d.rev_q||[], v=>(v/1e9).toFixed(1)+'B')}</div>
       <div class="card"><h2 style="margin-top:0">발행 주식수 추이</h2>${bars((d.shares_hist||[]).slice(-12).map(x=>({end:x.end,val:x.val})), v=>(v/1e6).toFixed(0)+'M')}</div>
     </div>
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));margin-top:10px">
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));margin-top:10px;max-width:1400px">
       <div class="card"><h2 style="margin-top:0">내 메모 · 투자 논지</h2>
         <div class="srow"><label>목표가</label><input id="d_target" value="${w.target??''}" style="width:90px"><label>손절가</label><input id="d_stop" value="${w.stop??''}" style="width:90px"><label>태그</label><input id="d_tags" value="${esc(w.tags||'')}" style="width:160px"></div>
         <textarea id="d_thesis" placeholder="왜 사는가 / 언제 파는가 / 확인할 것">${esc(w.thesis||'')}</textarea>

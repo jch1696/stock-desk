@@ -154,14 +154,26 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
                        or _series(facts, "SalesRevenueNet", ("USD",)))
     buyback_q = _quarterly(_series(facts, "PaymentsForRepurchaseOfCommonStock", ("USD",)))
     equity = _instant(_series(facts, "StockholdersEquity", ("USD",)) or _series(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", ("USD",)))
-    shares = _split_adjust(_instant(_series(facts, "EntityCommonStockSharesOutstanding", ("shares",)) or _series(facts, "CommonStockSharesOutstanding", ("shares",))
-                                    or _series(facts, "CommonStockSharesIssued", ("shares",))), splits or [])
-    if not shares:   # 신규 상장: 표지 주식수가 아직 없으면 분기(3개월) 희석 가중평균 주식수로 대체(9개월 누적값은 제외)
-        wa = _series(facts, "WeightedAverageNumberOfDilutedSharesOutstanding", ("shares",)) or _series(facts, "WeightedAverageNumberOfSharesOutstandingBasic", ("shares",))
-        by = {}
-        for r in _quarterly(wa):
-            by[r["end"]] = {"end": r["end"], "val": r["val"]}
-        shares = _split_adjust([by[k] for k in sorted(by)], splits or [])
+    # 주식수: 표지(dei) → 재무상태표 발행주식 → 분기 희석/기본 가중평균 순으로, '최신값이 0보다 큰' 첫 계열을 쓴다
+    #   (HOOD 는 CommonStockSharesOutstanding 이 0 으로 보고됨, TEM·신규상장은 표지 주식수가 없음)
+    shares = []
+    for tag, kind in (("EntityCommonStockSharesOutstanding", "i"), ("CommonStockSharesOutstanding", "i"), ("CommonStockSharesIssued", "i"),
+                      ("WeightedAverageNumberOfDilutedSharesOutstanding", "q"), ("WeightedAverageNumberOfSharesOutstandingBasic", "q")):
+        rows = _series(facts, tag, ("shares",))
+        if not rows:
+            continue
+        if kind == "i":
+            cand = [r for r in _instant(rows) if float(r["val"]) > 0]
+        else:
+            by = {}
+            for r in _quarterly(rows):
+                if float(r["val"]) > 0:
+                    by[r["end"]] = {"end": r["end"], "val": r["val"]}
+            cand = [by[k] for k in sorted(by)]
+        if cand:
+            shares = _split_adjust(cand, splits or [])
+            out["shares_tag"] = tag
+            break
     out["eps_q"] = [{"end": r["end"], "val": round(float(r["val"]), 3)} for r in eps_q[-12:]]
     out["rev_q"] = [{"end": r["end"], "val": float(r["val"])} for r in rev_q[-12:]]
     out["ni_q"] = [{"end": r["end"], "val": float(r["val"])} for r in ni_q[-12:]]
@@ -170,6 +182,11 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
     ni_ttm, basis = _ttm_or_annualized(ni_q); rev_ttm, _ = _ttm_or_annualized(rev_q); bb_ttm = _ttm(buyback_q)
     out["basis"] = basis
     sh_now = shares[-1]["val"] if shares else None
+    _eq_now = equity[-1]["val"] if equity else None
+    if sh_now and price and _eq_now and _eq_now > 0 and sh_now < 2e7 and (price * sh_now) / _eq_now < 0.02:
+        shares = [dict(r, val=r["val"] * 1000) for r in shares]          # TEM 처럼 천 주 단위로 올라온 경우
+        sh_now = shares[-1]["val"]
+        out["shares_scaled"] = 1000
     # EPS 는 XBRL 값이 분할 미조정(NVDA 10:1 등)이라 비교가 안 됨 → 순이익 ÷ 현재 주식수로 통일(분할 영향 없음)
     eps_ttm = (ni_ttm / sh_now) if (ni_ttm is not None and sh_now) else None
     out["eps_ttm"] = round(eps_ttm, 3) if eps_ttm is not None else None

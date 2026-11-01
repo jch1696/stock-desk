@@ -157,8 +157,9 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
     # 주식수: 표지(dei) → 재무상태표 발행주식 → 분기 희석/기본 가중평균 순으로, '최신값이 0보다 큰' 첫 계열을 쓴다
     #   (HOOD 는 CommonStockSharesOutstanding 이 0 으로 보고됨, TEM·신규상장은 표지 주식수가 없음)
     shares = []
-    for tag, kind in (("EntityCommonStockSharesOutstanding", "i"), ("CommonStockSharesOutstanding", "i"), ("CommonStockSharesIssued", "i"),
-                      ("WeightedAverageNumberOfDilutedSharesOutstanding", "q"), ("WeightedAverageNumberOfSharesOutstandingBasic", "q")):
+    #   표지 주식수가 없으면 '전체' 가중평균(희석)을 재무상태표 발행주식(클래스별로 쪼개져 있을 수 있음, HOOD)보다 먼저 쓴다
+    for tag, kind in (("EntityCommonStockSharesOutstanding", "i"), ("WeightedAverageNumberOfDilutedSharesOutstanding", "q"),
+                      ("WeightedAverageNumberOfSharesOutstandingBasic", "q"), ("CommonStockSharesOutstanding", "i"), ("CommonStockSharesIssued", "i")):
         rows = _series(facts, tag, ("shares",))
         if not rows:
             continue
@@ -183,7 +184,7 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
     out["basis"] = basis
     sh_now = shares[-1]["val"] if shares else None
     _eq_now = equity[-1]["val"] if equity else None
-    if sh_now and price and _eq_now and _eq_now > 0 and sh_now < 2e7 and (price * sh_now) / _eq_now < 0.02:
+    if sh_now and price and _eq_now and _eq_now > 0 and sh_now < 2e7 and (price * sh_now) / _eq_now < 0.5:
         shares = [dict(r, val=r["val"] * 1000) for r in shares]          # TEM 처럼 천 주 단위로 올라온 경우
         sh_now = shares[-1]["val"]
         out["shares_scaled"] = 1000

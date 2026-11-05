@@ -230,6 +230,22 @@ function spark(closes, w=900, h=220){
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}"><polyline fill="none" stroke="${up?'#1DB954':'#e24b4a'}" stroke-width="2.5" points="${pts}"/><text x="4" y="16">${fmt(mx)}</text><text x="4" y="${h-4}">${fmt(mn)}</text><text x="${w-190}" y="${h-4}">${closes[0].d} ~ ${closes[closes.length-1].d}</text><text x="${w-110}" y="16" style="fill:${up?'#1DB954':'#e24b4a'};font-size:16px;font-weight:700">${fmt(vs[vs.length-1])}</text></svg>`;
 }
 function bars(items, fmtv, w=900, h=220){
+  // 꺾은선(점+값) — 막대보다 추세가 한눈에 들어오게. 0 을 포함하지 않는 축(여백 12%), 마지막 값 강조
+  if(!items||!items.length) return '<span class="mute">자료 없음</span>';
+  const vs=items.map(i=>Number(i.val)), n=vs.length;
+  let mn=Math.min(...vs), mx=Math.max(...vs); if(mn===mx){ mn-=Math.abs(mn)*0.1||1; mx+=Math.abs(mx)*0.1||1; }
+  const pad=(mx-mn)*0.18; mn-=pad; mx+=pad;
+  const L=60, R=30, T=26, B=34, cw=w-L-R, ch=h-T-B;
+  const X=i=> n>1 ? L+i/(n-1)*cw : L+cw/2, Y=v=> T+(mx-v)/(mx-mn)*ch;
+  const pts=vs.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+  const up = vs[n-1]>=vs[0];
+  const grid=[0,0.5,1].map(f=>{ const v=mn+(mx-mn)*f; return `<line x1="${L}" x2="${w-R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2a3140" stroke-dasharray="3,4"/><text x="4" y="${(Y(v)+4).toFixed(1)}">${fmtv(v)}</text>`; }).join('');
+  const dots=vs.map((v,i)=>{ const last=i===n-1; const lab = (last || i%2===0 || n<=8) ? `<text x="${X(i).toFixed(1)}" y="${(Y(v)-9).toFixed(1)}" text-anchor="middle" style="fill:${last?'#fff':'#cfd3da'};font-weight:${last?700:400}">${fmtv(v)}</text>` : '';
+    return `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${last?5:3.5}" fill="${v<0?'#e24b4a':'#5b8def'}"/>${lab}`; }).join('');
+  const xl=items.map((it,i)=> (n<=8 || i%2===(n-1)%2) ? `<text x="${X(i).toFixed(1)}" y="${h-8}" text-anchor="middle">${it.end.slice(2,7)}</text>` : '').join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${grid}<polyline fill="none" stroke="${up?'#5b8def':'#e24b4a'}" stroke-width="2.5" stroke-linejoin="round" points="${pts}"/>${dots}${xl}</svg>`;
+}
+function barsOld(items, fmtv, w=900, h=220){
   if(!items||!items.length) return '<span class="mute">자료 없음</span>';
   const vs=items.map(i=>i.val), mx=Math.max(...vs.map(Math.abs))||1, bw=w/items.length;
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${items.map((it,i)=>{ const bh=Math.abs(it.val)/mx*(h-44); const y=it.val>=0?(h-24-bh):(h-24); return `<rect x="${(i*bw+2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw-4).toFixed(1)}" height="${bh.toFixed(1)}" fill="${it.val>=0?'#5b8def':'#e24b4a'}"/><text x="${(i*bw+bw/2).toFixed(1)}" y="${h-6}" text-anchor="middle">${it.end.slice(2,7)}</text><text x="${(i*bw+bw/2).toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" style="fill:#e6e8ee">${fmtv(it.val)}</text>`; }).join('')}</svg>`;

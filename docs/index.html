@@ -152,7 +152,7 @@ function metrics(sym){
   const price=f.price, prev=closes.length>1?closes[closes.length-2].c:null;
   const buy6=ins.buy_6m||{}, sell6=ins.sell_6m||{}, buy12=ins.buy_12m||{}, sell12=ins.sell_12m||{};
   return { sym, name:f.name||'', price, chg: (price&&prev)?price/prev-1:null, per:d.per, pbr:d.pbr, peg:d.peg, peg_basis:d.peg_basis, roe:d.roe,
-    sh1:d.shares_chg_1y, sh3:d.shares_chg_3y, bb:d.buyback_ttm, bby:d.buyback_yield, mcap:d.mcap, eps_g:d.eps_cagr_3y??d.eps_growth_1y, rev_g:d.rev_growth_1y, margin:d.net_margin,
+    sh1:d.shares_chg_1y, sh3:d.shares_chg_3y, sh5:d.shares_chg_5y, bb:d.buyback_ttm, bby:d.buyback_yield, mcap:d.mcap, eps_g:d.eps_cagr_3y??d.eps_growth_1y, rev_g:d.rev_growth_1y, margin:d.net_margin,
     ib6:buy6.n||0, ibv6:buy6.value||0, is6:sell6.n||0, isv6:sell6.value||0, ib12:buy12.n||0, ibv12:buy12.value||0, is12:sell12.n||0, isv12:sell12.value||0, last:d.last_report, d, ins, closes };
 }
 const cls = (v, good, bad) => v==null ? '' : (good(v) ? 'up' : (bad && bad(v)) ? 'dn' : '');
@@ -161,7 +161,7 @@ function metricCells(m){
     <td class="${cls(m.pbr, v=>v>0&&v<2, v=>v>10)}">${fmt(m.pbr,2)}</td>
     <td class="${cls(m.peg, v=>v>0&&v<1, v=>v<0||v>3)}" title="PEG 기준: ${esc(m.peg_basis||'')}">${fmt(m.peg,2)}</td>
     <td class="${cls(m.roe, v=>v>0.15, v=>v<0)}">${pct(m.roe)}</td>
-    <td class="${cls(m.sh1, v=>v<-0.005, v=>v>0.02)}" title="3년 ${pct(m.sh3)}">${pct(m.sh1)}</td>
+    <td class="${cls(m.sh1, v=>v<-0.005, v=>v>0.02)}" title="3년 ${pct(m.sh3)} · 5년 ${pct(m.sh5)}">${pct(m.sh1)}</td>
     <td class="${cls(m.bby, v=>v>0.02, null)}" title="최근 4분기 자사주 매입 ${money(m.bb)}">${pct(m.bby)}</td>
     <td class="${m.ib6>0?'up':''}" title="12개월 ${m.ib12}건 ${money(m.ibv12)}">${m.ib6?`${m.ib6}건 ${money(m.ibv6)}`:'-'}</td>
     <td class="${m.is6>0?'dn':''}" title="12개월 ${m.is12}건 ${money(m.isv12)}">${m.is6?`${m.is6}건 ${money(m.isv6)}`:'-'}</td>`;
@@ -214,10 +214,10 @@ function drawCompare(){
   const syms=[...new Set([..._pos.filter(byOwner).map(p=>p.symbol), ..._watch.filter(byOwner).map(w=>w.symbol)])];
   const rows=syms.map(s=>Object.assign(metrics(s), {held:_pos.filter(byOwner).some(p=>p.symbol===s)}));
   const sorted=sortRows(rows,'all');
-  $('all_tbl').innerHTML = `<tr>${th('all','sym','종목',1)}${th('all','price','현재가')}${th('all','chg','일간')}${th('all','mcap','시총')}${th('all','per','PER')}${th('all','pbr','PBR')}${th('all','peg','PEG')}${th('all','roe','ROE')}${th('all','margin','순이익률')}${th('all','eps_g','이익성장')}${th('all','rev_g','매출성장')}${th('all','sh1','주식수 1y')}${th('all','sh3','주식수 3y')}${th('all','bby','자사주 매입(1년, 시총 대비)')}${th('all','ibv6','내부자 매수 6m')}${th('all','isv6','내부자 매도 6m')}${th('all','last','최근 보고')}</tr>` +
+  $('all_tbl').innerHTML = `<tr>${th('all','sym','종목',1)}${th('all','price','현재가')}${th('all','chg','일간')}${th('all','mcap','시총')}${th('all','per','PER')}${th('all','pbr','PBR')}${th('all','peg','PEG')}${th('all','roe','ROE')}${th('all','margin','순이익률')}${th('all','eps_g','이익성장')}${th('all','rev_g','매출성장')}${th('all','sh1','주식수 1y')}${th('all','sh3','주식수 3y')}${th('all','sh5','주식수 5y')}${th('all','bby','자사주 매입(1년, 시총 대비)')}${th('all','ibv6','내부자 매수 6m')}${th('all','isv6','내부자 매도 6m')}${th('all','last','최근 보고')}</tr>` +
     sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b>${r.held?'<span class="pill">보유</span>':''} <span class="mute">${esc(r.name).slice(0,20)}</span></td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td>${money(r.mcap)}</td>
       <td class="${cls(r.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(r.per,1)}</td><td class="${cls(r.pbr,v=>v>0&&v<2,v=>v>10)}">${fmt(r.pbr,2)}</td><td class="${cls(r.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(r.peg,2)}</td><td class="${cls(r.roe,v=>v>0.15,v=>v<0)}">${pct(r.roe)}</td><td>${pct(r.margin)}</td><td class="${cls(r.eps_g,v=>v>0.15,v=>v<0)}">${pct(r.eps_g,0)}</td><td class="${cls(r.rev_g,v=>v>0.1,v=>v<0)}">${pct(r.rev_g,0)}</td>
-      <td class="${cls(r.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(r.sh1)}</td><td class="${cls(r.sh3,v=>v<-0.02,v=>v>0.05)}">${pct(r.sh3)}</td><td class="${cls(r.bby,v=>v>0.02,null)}">${pct(r.bby)}</td><td class="${r.ib6?'up':''}">${r.ib6?`${r.ib6}건 ${money(r.ibv6)}`:'-'}</td><td class="${r.is6?'dn':''}">${r.is6?`${r.is6}건 ${money(r.isv6)}`:'-'}</td><td class="mute">${esc(r.last||'-')}</td></tr>`).join('');
+      <td class="${cls(r.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(r.sh1)}</td><td class="${cls(r.sh3,v=>v<-0.02,v=>v>0.05)}">${pct(r.sh3)}</td><td class="${cls(r.sh5,v=>v<-0.05,v=>v>0.08)}">${pct(r.sh5)}</td><td class="${cls(r.bby,v=>v>0.02,null)}">${pct(r.bby)}</td><td class="${r.ib6?'up':''}">${r.ib6?`${r.ib6}건 ${money(r.ibv6)}`:'-'}</td><td class="${r.is6?'dn':''}">${r.is6?`${r.is6}건 ${money(r.isv6)}`:'-'}</td><td class="mute">${esc(r.last||'-')}</td></tr>`).join('');
 }
 
 // ── 종목 상세 ──
@@ -268,7 +268,7 @@ function drawDetail(){
       <div class="k"><b class="${cls(m.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(m.peg,2)}</b><span>PEG (${esc(m.peg_basis||'-')} 이익성장 ${pct(m.eps_g,0)})</span></div>
       <div class="k"><b class="${cls(m.roe,v=>v>0.15,v=>v<0)}">${pct(m.roe)}</b><span>ROE (${esc(d.basis||'TTM')})</span></div>
       <div class="k"><b>${pct(m.margin)}</b><span>순이익률</span></div>
-      <div class="k"><b class="${cls(m.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(m.sh1)}</b><span>주식수 1년 (3년 ${pct(m.sh3)})</span></div>
+      <div class="k"><b class="${cls(m.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(m.sh1)}</b><span>주식수 1년 (3년 ${pct(m.sh3)} · 5년 ${pct(m.sh5)})</span></div>
       <div class="k"><b>${money(m.bb)}</b><span>자사주 매입액(최근 1년) · 시총의 ${pct(m.bby)}</span></div>
       <div class="k"><b class="${m.ib6?'up':''}">${m.ib6}건 ${money(m.ibv6)}</b><span>내부자 매수 6개월</span></div>
       <div class="k"><b class="${m.is6?'dn':''}">${m.is6}건 ${money(m.isv6)}</b><span>내부자 매도 6개월</span></div>
@@ -277,7 +277,7 @@ function drawDetail(){
       <div class="card"><h2 style="margin-top:0">1년 가격</h2>${spark(m.closes)}</div>
       <div class="card"><h2 style="margin-top:0">분기 주당순이익 (순이익÷현재 주식수)</h2>${bars(d.eps_q||[], v=>v.toFixed(2))}</div>
       <div class="card"><h2 style="margin-top:0">분기 매출</h2>${bars(d.rev_q||[], v=>(v/1e9).toFixed(1)+'B')}</div>
-      <div class="card"><h2 style="margin-top:0">발행 주식수 추이</h2>${bars((d.shares_hist||[]).slice(-12).map(x=>({end:x.end,val:x.val})), v=>(v/1e6).toFixed(0)+'M')}</div>
+      <div class="card"><h2 style="margin-top:0">발행 주식수 추이</h2>${bars((d.shares_hist||[]).slice(-20).map(x=>({end:x.end,val:x.val})), v=>(v/1e6).toFixed(0)+'M')}</div>
     </div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));margin-top:10px;max-width:1400px">
       <div class="card"><h2 style="margin-top:0">내 메모 · 투자 논지</h2>

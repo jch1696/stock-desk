@@ -193,7 +193,7 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
     out["eps_q"] = [{"end": r["end"], "val": round(float(r["val"]), 3)} for r in eps_q[-12:]]
     out["rev_q"] = [{"end": r["end"], "val": float(r["val"])} for r in rev_q[-12:]]
     out["ni_q"] = [{"end": r["end"], "val": float(r["val"])} for r in ni_q[-12:]]
-    out["shares_hist"] = [{"end": r["end"], "val": float(r["val"])} for r in shares[-16:]]
+    out["shares_hist"] = [{"end": r["end"], "val": float(r["val"])} for r in shares[-24:]]
     out["equity_hist"] = [{"end": r["end"], "val": float(r["val"])} for r in equity[-8:]]
     ni_ttm, basis = _ttm_or_annualized(ni_q); rev_ttm, _ = _ttm_or_annualized(rev_q); bb_ttm = _ttm(buyback_q)
     out["basis"] = basis
@@ -232,9 +232,10 @@ def fundamentals(cik: str, price: Optional[float], splits: Optional[list] = None
         cutoff = (date.fromisoformat(shares[-1]["end"]) - timedelta(days=int(30.4 * months))).isoformat()
         cands = [r for r in shares if r["end"] <= cutoff]
         return cands[-1]["val"] if cands else None
-    s1, s3 = sh_at(12), sh_at(36)
+    s1, s3, s5 = sh_at(12), sh_at(36), sh_at(60)
     out["shares_chg_1y"] = (sh_now / s1 - 1) if (sh_now and s1) else None
     out["shares_chg_3y"] = (sh_now / s3 - 1) if (sh_now and s3) else None
+    out["shares_chg_5y"] = (sh_now / s5 - 1) if (sh_now and s5) else None   # 5년 소각 비중 스크린용
     # 가격 배수
     if price and price > 0:
         out["per"] = (price / eps_ttm) if (eps_ttm and eps_ttm > 0) else None

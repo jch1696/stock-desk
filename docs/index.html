@@ -23,6 +23,7 @@
   .tabs{ display:flex; gap:4px; border-bottom:1px solid var(--line); margin:10px 0 } .tabs button{ border:none; border-bottom:2px solid transparent; border-radius:0; background:transparent; padding:8px 12px }
   .tabs button.on{ border-bottom-color:var(--acc); color:#fff }
   .hidden{ display:none } .wrap{ overflow:auto; max-height:70vh }
+  td.edit{ cursor:pointer } td.edit:hover{ background:#242a37; color:#7aa7ff }
   .pill{ display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; background:#242a37; margin-left:4px }
   .good{ background:#163d2a; color:#7ee2a8 } .bad{ background:#4a1f1f; color:#f0a0a0 } .warn{ background:#4a3a1a; color:#f0d090 }
   .kpi{ display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px } .kpi .k{ background:#0f1218; border-radius:8px; padding:8px } .kpi .k b{ display:block; font-size:16px } .kpi .k span{ color:var(--mute); font-size:11px }
@@ -177,11 +178,34 @@ function drawPort(){
   const tot = rows.reduce((a,r)=>a+r.val,0), cost=rows.reduce((a,r)=>a+r.cost,0), day=rows.reduce((a,r)=>a+(r.chg!=null?r.val-r.val/(1+r.chg):0),0);
   $('port_sum').innerHTML = `<div class="k"><b>${money(tot)}</b><span>평가액</span></div><div class="k"><b class="${tot-cost>=0?'up':'dn'}">${money(tot-cost)} (${pct(cost?tot/cost-1:null)})</b><span>평가손익</span></div>
     <div class="k"><b class="${day>=0?'up':'dn'}">${money(day)}</b><span>오늘 변동</span></div><div class="k"><b>${rows.length}</b><span>종목</span></div>`;
-  const sorted = sortRows(rows,'port');
+  const sorted = sortRows(rows,'port'); _portRows = sorted;
   $('port_tbl').innerHTML = `<tr>${th('port','sym','종목',1)}${_owner?'':th('port','owner','사람',1)}${th('port','acct','계좌',1)}${th('port','price','현재가')}${th('port','chg','일간')}${th('port','qty','수량')}${th('port','avg','평단')}${th('port','val','평가액')}${th('port','pnlp','손익')}${th('port','per','PER')}${th('port','pbr','PBR')}${th('port','peg','PEG')}${th('port','roe','ROE')}${th('port','sh1','주식수 1y')}${th('port','bby','자사주 매입(1년, 시총 대비)')}<th>내부자 6m</th><th></th></tr>` +
-    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td>${_owner?'':`<td class="l">${esc(r.owner)}</td>`}<td class="l">${esc(r.acct)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td>${fmt(r.qty,0)}</td><td>${fmt(r.avg)}</td><td>${money(r.val)}</td><td class="${r.pnl>=0?'up':'dn'}">${money(r.pnl)}<br><span class="mute">${pct(r.pnlp)}</span></td>
+    (sorted.map(r=>`<tr class="row" onclick="openDetail('${r.sym}')"><td class="l"><b>${r.sym}</b> <span class="mute">${esc(r.name).slice(0,22)}</span></td>${_owner?'':`<td class="l">${esc(r.owner)}</td>`}<td class="l">${esc(r.acct)}</td><td>${fmt(r.price)}</td><td class="${r.chg>=0?'up':'dn'}">${pct(r.chg)}</td><td class="edit" title="눌러서 수량 수정 (매도·추가매수 반영)" onclick="event.stopPropagation();editPos(${sorted.indexOf(r)},'qty')">${fmt(r.qty,0)} ✎</td><td class="edit" title="눌러서 평단 수정" onclick="event.stopPropagation();editPos(${sorted.indexOf(r)},'avg_cost')">${fmt(r.avg)} ✎</td><td>${money(r.val)}</td><td class="${r.pnl>=0?'up':'dn'}">${money(r.pnl)}<br><span class="mute">${pct(r.pnlp)}</span></td>
       <td class="${cls(r.per,v=>v>0&&v<15,v=>v<0||v>40)}">${fmt(r.per,1)}</td><td class="${cls(r.pbr,v=>v>0&&v<2,v=>v>10)}">${fmt(r.pbr,2)}</td><td class="${cls(r.peg,v=>v>0&&v<1,v=>v<0||v>3)}">${fmt(r.peg,2)}</td><td class="${cls(r.roe,v=>v>0.15,v=>v<0)}">${pct(r.roe)}</td><td class="${cls(r.sh1,v=>v<-0.005,v=>v>0.02)}">${pct(r.sh1)}</td><td class="${cls(r.bby,v=>v>0.02,null)}">${pct(r.bby)}</td>
       <td>${r.ib6?`<span class="up">매수 ${r.ib6}</span>`:''}${r.is6?` <span class="dn">매도 ${r.is6}</span>`:''}</td><td><button class="ghost" onclick="event.stopPropagation();delPos('${r.sym}','${esc(r.acct).replace(/'/g,'')}','${esc(r.owner).replace(/'/g,'')}')">✕</button></td></tr>`).join('') || '<tr><td colspan="16" class="mute l">보유 종목을 추가하세요</td></tr>');
+}
+let _portRows = [];
+// 보유 수량·평단 고치기 — 수량 0 이면 보유에서 지우고(전량 매도) 관심 목록으로 옮길지 묻는다
+async function editPos(i, field){
+  const r=_portRows[i]; if(!r) return;
+  const label = field==='qty' ? '수량' : '평단($)';
+  const v = prompt(`${r.owner} · ${r.sym} (${r.acct||'계좌 없음'}) — 새 ${label}을 입력하세요${field==='qty'?' (전량 매도는 0)':''}`, String(field==='qty'?r.qty:r.avg));
+  if(v==null) return;
+  const num=Number(String(v).replace(/,/g,''));
+  if(!(num>=0) || (field==='avg_cost' && !(num>0))){ alert(`${label} 값이 올바르지 않습니다`); return; }
+  const where=`desk_positions?symbol=eq.${encodeURIComponent(r.sym)}&account=eq.${encodeURIComponent(r.acct||'')}&owner=eq.${encodeURIComponent(r.owner)}`;
+  if(field==='qty' && num===0){
+    if(!confirm(`${r.owner} · ${r.sym} 전량 매도로 보유에서 지울까요?`)) return;
+    await sbDelete(where);
+    const still=_pos.some(p=>p.symbol===r.sym && (p.owner||'나')===r.owner && (p.account||'')!==(r.acct||''));
+    const watched=_watch.some(w=>w.symbol===r.sym && (w.owner||'나')===r.owner);
+    if(!still && !watched && confirm(`${r.sym} 을(를) 관심 목록에 남겨 둘까요?`))
+      await sbUpsert('desk_watch',[{owner:r.owner, symbol:r.sym, tags:'매도함', updated_at:new Date().toISOString()}],'user_id,owner,symbol');
+    refresh(); return;
+  }
+  const res=await fetch(`${URL_}/rest/v1/${where}`,{method:'PATCH',headers:H({Prefer:'return=minimal'}),body:JSON.stringify({[field]:num, updated_at:new Date().toISOString()})});
+  if(!res.ok){ alert(`수정 실패 ${res.status}: ${await res.text()}`); return; }
+  refresh();
 }
 async function addPos(){
   const sym=$('p_sym').value.trim().toUpperCase(), acct=$('p_acct').value.trim(), qty=Number($('p_qty').value)||0, avg=Number($('p_avg').value)||0, owner=($('p_owner').value.trim()||'나');

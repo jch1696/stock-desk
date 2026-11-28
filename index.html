@@ -87,7 +87,7 @@
 
   <div class="pane hidden" data-pane="news">
     <div class="srow" id="news_bar"></div>
-    <div class="mute" style="margin:4px 0 8px">보유+관심 종목의 최근 6개월 공시(SEC EDGAR)와 내부자 대량 매매($100만 이상). 줄을 누르면 원문이 열립니다. 수집은 하루 한 번(아침)입니다.</div>
+    <div class="mute" style="margin:4px 0 8px">보유+관심 종목의 최근 6개월 공시(SEC EDGAR)·내부자 대량 매매($100만 이상)·최근 2주 뉴스 제목(Yahoo). 공시 아래 작은 글씨는 원문 본문 앞부분을 기계 번역한 것입니다. 줄을 누르면 원문이 열립니다. 수집은 하루 한 번(아침)입니다.</div>
     <div class="card wrap"><table id="news_tbl"></table></div>
   </div>
 
@@ -98,7 +98,7 @@
 const DEFAULT_URL = '';
 const DEFAULT_KEY = '';
 let URL_ = DEFAULT_URL, KEY_ = DEFAULT_KEY, TOKEN_ = '', USER_ = null;
-let _fil = {}, _newsKind = '', _newsImp = true;
+let _fil = {}, _newsKind = '', _newsMode = 'imp';
 let _pos = [], _watch = [], _fund = {}, _ins = {}, _px = {}, _tab = 'port', _sel = '', _sort = {all:['symbol',1], port:['symbol',1], watch:['symbol',1]};
 let _owner = (()=>{ try { return localStorage.getItem('desk_owner')||''; } catch(e){ return ''; } })();   // ''=전체
 const $ = id => document.getElementById(id);
@@ -287,19 +287,20 @@ const _daysAgo = d => Math.floor((Date.now()-new Date(d+'T00:00:00').getTime())/
 function newsDot(sym){ const n=newsOf(sym).filter(x=>x.imp && _daysAgo(x.date)<=7); if(!n.length) return '';
   return `<span class="ndot" title="최근 7일 중요 소식 ${n.length}건: ${esc(n.slice(0,3).map(x=>x.date.slice(5)+' '+x.title).join(' / '))}" onclick="event.stopPropagation();_newsKind='';showTab('news')"></span>`; }
 function newsRows(list, withSym){
-  return list.map(x=>`<tr class="row" onclick="window.open('${esc(x.url)}','_blank','noopener')"><td class="l">${esc(x.date)}${_daysAgo(x.date)<=7?' <span class="ndot" style="cursor:default"></span>':''}</td>${withSym?`<td class="l">${logo(x.sym)}<b>${x.sym}</b></td>`:''}<td class="l">${kindPill(x.kind)}</td><td class="l" style="white-space:normal;${x.imp?'':'color:#8b93a7'}${x.kind==='내부자'?(x.buy?';color:#2ecc71':';color:#ff6b6b'):''}">${esc(x.title)}</td><td class="l mute">${esc(x.form)}</td></tr>`).join('');
+  return list.map(x=>`<tr class="row" onclick="window.open('${esc(x.url)}','_blank','noopener')"><td class="l">${esc(x.date)}${_daysAgo(x.date)<=7?' <span class="ndot" style="cursor:default"></span>':''}</td>${withSym?`<td class="l">${logo(x.sym)}<b>${x.sym}</b></td>`:''}<td class="l">${kindPill(x.kind)}</td><td class="l" title="${esc(x.en||'')}" style="white-space:normal;min-width:260px;${(x.imp||x.kind==='뉴스')?'':'color:#8b93a7'}${x.kind==='내부자'?(x.buy?';color:#2ecc71':';color:#ff6b6b'):''}">${esc(x.title)}${x.sum?`<div class="mute" style="font-size:12px;line-height:1.45;margin-top:3px;font-weight:400">${esc(x.sum)}</div>`:''}</td><td class="l mute">${esc(x.form)}</td></tr>`).join('');
 }
 function drawNews(){
   const tbl=$('news_tbl'); if(!tbl) return;
   const syms=[...new Set([..._pos.filter(byOwner).map(p=>p.symbol), ..._watch.filter(byOwner).map(w=>w.symbol)])];
   let all=[]; syms.forEach(s=>{ all=all.concat(newsOf(s)); });
   all.sort((a,b)=> a.date<b.date ? 1 : a.date>b.date ? -1 : a.sym.localeCompare(b.sym));
-  const kinds=[...new Set(all.filter(x=>!_newsImp||x.imp).map(x=>x.kind))];
+  const pass = x => _newsMode==='all' || (_newsMode==='news' ? x.kind==='뉴스' : x.imp);
+  const kinds=_newsMode==='news' ? [] : [...new Set(all.filter(pass).map(x=>x.kind))];
   if(_newsKind && kinds.indexOf(_newsKind)<0) _newsKind='';
-  $('news_bar').innerHTML = `<button class="${_newsImp?'primary':'ghost'}" onclick="_newsImp=!_newsImp;drawNews()">${_newsImp?'중요만 보는 중':'전체 보는 중'}</button>`
-    + `<button class="${_newsKind?'ghost':'primary'}" onclick="_newsKind='';drawNews()">모든 종류</button>`
+  $('news_bar').innerHTML = [['imp','중요 공시'],['news','뉴스'],['all','전체']].map(m=>`<button class="${_newsMode===m[0]?'primary':'ghost'}" onclick="_newsMode='${m[0]}';_newsKind='';drawNews()">${m[1]}</button>`).join('')
+    + (kinds.length ? `<span class="mute" style="margin:0 4px">|</span><button class="${_newsKind?'ghost':'primary'}" onclick="_newsKind='';drawNews()">모든 종류</button>` : '')
     + kinds.map(k=>`<button class="${_newsKind===k?'primary':'ghost'}" onclick="_newsKind='${k}';drawNews()">${esc(k)}</button>`).join('');
-  const list=all.filter(x=>(!_newsImp||x.imp) && (!_newsKind||x.kind===_newsKind)).slice(0,300);
+  const list=all.filter(x=>pass(x) && (!_newsKind||x.kind===_newsKind)).slice(0,300);
   tbl.innerHTML = `<tr><th class="l">일자</th><th class="l">종목</th><th class="l">종류</th><th class="l">내용</th><th class="l">양식</th></tr>`
     + (newsRows(list, true) || `<tr><td colspan="5" class="mute l">${Object.keys(_fil).length?'해당하는 소식이 없습니다':'공시 자료가 아직 없습니다 — 수집기를 한 번 돌려야 합니다'}</td></tr>`);
 }
@@ -371,8 +372,13 @@ function drawDetail(){
       </div>
       <div class="card"><h2 style="margin-top:0">최근 공시·소식</h2>
         <div class="wrap" style="max-height:320px"><table><tr><th class="l">일자</th><th class="l">종류</th><th class="l">내용</th><th class="l">양식</th></tr>
-        ${newsRows(newsOf(_sel).slice(0,15), false) || '<tr><td colspan="4" class="mute l">최근 6개월 공시 없음(또는 미수집)</td></tr>'}</table></div>
-        <div class="mute" style="margin-top:6px">회색 글씨는 참고용(첨부·공정공시 등). 줄을 누르면 SEC 원문.</div>
+        ${newsRows(newsOf(_sel).filter(x=>x.kind!=='뉴스').slice(0,15), false) || '<tr><td colspan="4" class="mute l">최근 6개월 공시 없음(또는 미수집)</td></tr>'}</table></div>
+        <div class="mute" style="margin-top:6px">회색 글씨는 참고용(첨부·공정공시 등). 작은 글씨는 원문 앞부분 기계 번역. 줄을 누르면 SEC 원문.</div>
+      </div>
+      <div class="card"><h2 style="margin-top:0">최근 뉴스 (2주)</h2>
+        <div class="wrap" style="max-height:320px"><table><tr><th class="l">일자</th><th class="l">종류</th><th class="l">제목</th><th class="l">출처</th></tr>
+        ${newsRows(newsOf(_sel).filter(x=>x.kind==='뉴스'), false) || '<tr><td colspan="4" class="mute l">최근 뉴스 없음(또는 미수집)</td></tr>'}</table></div>
+        <div class="mute" style="margin-top:6px">제목은 기계 번역입니다. 마우스를 올리면 영어 원제, 누르면 기사 원문.</div>
       </div>
       <div class="card"><h2 style="margin-top:0">내부자 거래 (Form 4, 장내 매수 P / 매도 S)</h2>
         <div class="wrap" style="max-height:320px"><table><tr><th class="l">일자</th><th class="l">이름</th><th class="l">직위</th><th>구분</th><th>수량</th><th>단가</th><th>금액</th><th>거래 후 보유</th></tr>

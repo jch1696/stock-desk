@@ -21,7 +21,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import edgar  # noqa: E402
-import filings as filings_mod  # noqa: E402
+import news as news_mod  # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -91,11 +91,15 @@ def yahoo(symbol: str) -> dict:
             "name": meta.get("longName") or meta.get("shortName") or "", "splits": sorted(splits, key=lambda x: x["date"])}
 
 
-def collect(symbol: str, with_insider: bool = True) -> dict:
+def collect(symbol: str, with_insider: bool = True, prev_feed=None) -> dict:
     sym = symbol.upper().strip()
     y = yahoo(sym)
     cik = edgar.cik_of(sym)
     out = {"symbol": sym, "price": y["price"], "closes": y["closes"], "name": y["name"] or edgar.name_of(sym), "cik": cik}
+    try:
+        out["filings"] = news_mod.feed(sym, cik, prev_feed)      # 공시(요약) + 뉴스 제목. CIK 없는 ETF 는 뉴스만
+    except Exception as e:
+        log.warning(f"{sym} 소식 실패: {e}")
     if cik:
         try:
             out["fund"] = edgar.fundamentals(cik, y["price"], splits=y.get("splits") or [])
@@ -104,10 +108,6 @@ def collect(symbol: str, with_insider: bool = True) -> dict:
             out["name"] = out["name"] or out["fund"].get("name", "")
         except Exception as e:
             log.warning(f"{sym} 재무 실패: {e}")
-        try:
-            out["filings"] = filings_mod.filings(cik)
-        except Exception as e:
-            log.warning(f"{sym} 공시 실패: {e}")
         if with_insider:
             try:
                 out["insider"] = edgar.insider(cik)
@@ -123,7 +123,7 @@ def main():
     ap.add_argument("--symbols", default="")
     ap.add_argument("--no-insider", action="store_true")
     ap.add_argument("--dry", action="store_true", help="업로드 없이 출력만")
-    ap.add_argument("--filings-only", action="store_true", help="공시 목록만 빠르게 갱신(종목당 1요청)")
+    ap.add_argument("--filings-only", action="store_true", help="공시·뉴스만 빠르게 갱신")
     a = ap.parse_args()
     load_env()
     sb = None if a.dry else SB()
@@ -133,23 +133,28 @@ def main():
         rows = sb.get("desk_positions?select=symbol") + sb.get("desk_watch?select=symbol")
         syms = sorted({r["symbol"].upper() for r in rows})
     log.info(f"{len(syms)} 종목: {', '.join(syms)}")
+    prev_feed = {}                                   # 이전 소식(요약·번역 재사용)
+    if sb:
+        try:
+            prev_feed = {r["symbol"]: r.get("data") or [] for r in sb.get("desk_filings?select=symbol,data")}
+        except Exception as e:
+            log.warning(f"이전 소식 읽기 실패: {e}")
     if a.filings_only:
         for i, s in enumerate(syms, 1):
             try:
                 cik = edgar.cik_of(s)
-                rows = filings_mod.filings(cik) if cik else None
+                rows = news_mod.feed(s.upper(), cik, prev_feed.get(s.upper()))
             except Exception as e:
-                log.error(f"{s} 공시 실패: {e}"); continue
-            if rows is None:
-                log.info(f"[{i}/{len(syms)}] {s} CIK 없음"); continue
-            log.info(f"[{i}/{len(syms)}] {s} 공시 {len(rows)}건 (중요 {sum(1 for r in rows if r['imp'])})")
+                log.error(f"{s} 소식 실패: {e}"); continue
+            log.info(f"[{i}/{len(syms)}] {s} 공시 {sum(1 for r in rows if r['kind'] != '뉴스')}건 (중요 {sum(1 for r in rows if r['imp'])}, "
+                     f"요약 {sum(1 for r in rows if r.get('sum'))}) · 뉴스 {sum(1 for r in rows if r['kind'] == '뉴스')}건")
             if not a.dry:
                 sb.upsert("desk_filings", [{"symbol": s, "asof": datetime.now(timezone.utc).isoformat(), "data": rows}], "symbol")
         return
     for i, s in enumerate(syms, 1):
         t0 = time.time()
         try:
-            d = collect(s, with_insider=not a.no_insider)
+            d = collect(s, with_insider=not a.no_insider, prev_feed=prev_feed.get(s.upper()))
         except Exception as e:
             log.error(f"{s} 실패: {e}"); continue
         f = d.get("fund") or {}

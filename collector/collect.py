@@ -21,6 +21,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import edgar  # noqa: E402
+import filings as filings_mod  # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -103,6 +104,10 @@ def collect(symbol: str, with_insider: bool = True) -> dict:
             out["name"] = out["name"] or out["fund"].get("name", "")
         except Exception as e:
             log.warning(f"{sym} 재무 실패: {e}")
+        try:
+            out["filings"] = filings_mod.filings(cik)
+        except Exception as e:
+            log.warning(f"{sym} 공시 실패: {e}")
         if with_insider:
             try:
                 out["insider"] = edgar.insider(cik)
@@ -118,6 +123,7 @@ def main():
     ap.add_argument("--symbols", default="")
     ap.add_argument("--no-insider", action="store_true")
     ap.add_argument("--dry", action="store_true", help="업로드 없이 출력만")
+    ap.add_argument("--filings-only", action="store_true", help="공시 목록만 빠르게 갱신(종목당 1요청)")
     a = ap.parse_args()
     load_env()
     sb = None if a.dry else SB()
@@ -127,6 +133,19 @@ def main():
         rows = sb.get("desk_positions?select=symbol") + sb.get("desk_watch?select=symbol")
         syms = sorted({r["symbol"].upper() for r in rows})
     log.info(f"{len(syms)} 종목: {', '.join(syms)}")
+    if a.filings_only:
+        for i, s in enumerate(syms, 1):
+            try:
+                cik = edgar.cik_of(s)
+                rows = filings_mod.filings(cik) if cik else None
+            except Exception as e:
+                log.error(f"{s} 공시 실패: {e}"); continue
+            if rows is None:
+                log.info(f"[{i}/{len(syms)}] {s} CIK 없음"); continue
+            log.info(f"[{i}/{len(syms)}] {s} 공시 {len(rows)}건 (중요 {sum(1 for r in rows if r['imp'])})")
+            if not a.dry:
+                sb.upsert("desk_filings", [{"symbol": s, "asof": datetime.now(timezone.utc).isoformat(), "data": rows}], "symbol")
+        return
     for i, s in enumerate(syms, 1):
         t0 = time.time()
         try:
@@ -144,6 +163,8 @@ def main():
         now = datetime.now(timezone.utc).isoformat()
         sb.upsert("desk_fundamentals", [{"symbol": s, "asof": now, "name": d["name"], "cik": d["cik"], "price": d["price"], "data": f}], "symbol")
         sb.upsert("desk_prices", [{"symbol": s, "asof": now, "closes": d["closes"]}], "symbol")
+        if d.get("filings") is not None:
+            sb.upsert("desk_filings", [{"symbol": s, "asof": now, "data": d["filings"]}], "symbol")
         if ins:
             sb.upsert("desk_insider", [{"symbol": s, "asof": now, "data": ins}], "symbol")
 
